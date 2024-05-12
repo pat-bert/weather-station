@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS 
+        "main.cpp"
+        "bmp280/bmp2_defs.h"
+        "bmp280/bmp2.c"
+        "bmp280/bmp2.h"
+    INCLUDE_DIRS 
+        "."
+        "bmp280"
+)
