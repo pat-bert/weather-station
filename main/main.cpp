@@ -10,6 +10,7 @@
 
 #include "bmp280/bmp2.h"
 #include "st7735/esp_lcd_panel_custom_vendor.h"
+// #include "esp_lcd_panel_vendor.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -25,7 +26,8 @@
 
 #define LCD_PIN_NUM_SCLK GPIO_NUM_18
 #define LCD_PIN_NUM_MOSI GPIO_NUM_23
-#define LCD_PIN_NUM_LCD_DC GPIO_NUM_26
+#define LCD_PIN_NUM_CS GPIO_NUM_25
+#define LCD_PIN_NUM_DC GPIO_NUM_26
 #define LCD_PIN_NUM_RST GPIO_NUM_27
 
 #define LCD_V_RES 128
@@ -44,6 +46,16 @@ struct I2CInterfaceData
     uint8_t i2c_addr;
     i2c_port_t i2c_num;
 };
+
+uint16_t RGB888ToRGB565(uint8_t r, uint8_t g, uint8_t b)
+{
+    return (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b & 0xF8));
+}
+
+uint16_t swapBytes(uint16_t bytes)
+{
+    return (bytes << 8) | (bytes >> 8);
+}
 
 void initI2C()
 {
@@ -73,9 +85,9 @@ void initSPI()
     buscfg.sclk_io_num = LCD_PIN_NUM_SCLK;
     buscfg.mosi_io_num = LCD_PIN_NUM_MOSI;
     buscfg.miso_io_num = -1;
-    buscfg.quadwp_io_num = -1;                                                  // Quad SPI LCD driver is not yet supported
-    buscfg.quadhd_io_num = -1;                                                  // Quad SPI LCD driver is not yet supported
-    buscfg.max_transfer_sz = LCD_H_RES * LCD_PARALLEL_LINES * sizeof(uint16_t); // transfer 80 lines of pixels (assume pixel is RGB565) at most in one SPI transaction
+    buscfg.quadwp_io_num = -1;                                         // Quad SPI LCD driver is not yet supported
+    buscfg.quadhd_io_num = -1;                                         // Quad SPI LCD driver is not yet supported
+    buscfg.max_transfer_sz = LCD_H_RES * LCD_V_RES * sizeof(uint16_t); // transfer 80 lines of pixels (assume pixel is RGB565) at most in one SPI transaction
 
     ESP_ERROR_CHECK(spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO)); // Enable the DMA feature
 }
@@ -237,12 +249,13 @@ void task_display(void *pvParameters)
 
     esp_lcd_panel_io_handle_t io_handle = nullptr;
     esp_lcd_panel_io_spi_config_t io_config{};
-    io_config.dc_gpio_num = LCD_PIN_NUM_LCD_DC;
-    io_config.cs_gpio_num = -1;
+    io_config.dc_gpio_num = LCD_PIN_NUM_DC;
+    io_config.cs_gpio_num = LCD_PIN_NUM_CS;
     io_config.pclk_hz = LCD_PIXEL_CLOCK_HZ;
     io_config.lcd_cmd_bits = LCD_CMD_BITS;
     io_config.lcd_param_bits = LCD_PARAM_BITS;
-    io_config.spi_mode = 3; // CPOL = CPHA = 1
+    io_config.spi_mode = 0;       // CPOL = CPHA = 0
+    io_config.flags.sio_mode = 1; // only MOSI, no MISO
     io_config.trans_queue_depth = 10;
 
     // Attach the LCD to the SPI bus
@@ -260,6 +273,18 @@ void task_display(void *pvParameters)
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    uint16_t *colorData = (uint16_t *)heap_caps_malloc(LCD_H_RES * LCD_V_RES * sizeof(uint16_t), MALLOC_CAP_DMA);
+    for (int i = 0; i < LCD_H_RES; ++i)
+    {
+        for (int j = 0; j < LCD_V_RES; ++j)
+        {
+            colorData[i * LCD_H_RES + j] = swapBytes(RGB888ToRGB565(255, 0, 0));
+        }
+    }
+
+    esp_lcd_panel_draw_bitmap(panel_handle, 0, 0, LCD_H_RES, LCD_V_RES, (void *)&colorData);
 
     while (true)
     {
