@@ -1,11 +1,15 @@
-#include "esp_log.h"
-
-#include "driver/i2c.h"
 #include "driver/gpio.h"
+#include "driver/i2c.h"
+#include "driver/spi_master.h"
 
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_ops.h"
+
+#include "esp_log.h"
 #include "rom/ets_sys.h"
 
 #include "bmp280/bmp2.h"
+#include "st7735/esp_lcd_panel_custom_vendor.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,8 +18,26 @@
 #define ACK_CHECK_EN true   /*!< I2C master will check ack from slave*/
 #define ACK_CHECK_DIS false /*!< I2C master will not check ack from slave */
 
-#define STACK_SIZE 2048
+#define I2C_SDA_PIN GPIO_NUM_21
+#define I2C_SCL_PIN GPIO_NUM_22
+#define BMP_I2C_PORT I2C_NUM_0
 #define BMP2_32BIT_COMPENSATION
+
+#define LCD_PIN_NUM_SCLK GPIO_NUM_18
+#define LCD_PIN_NUM_MOSI GPIO_NUM_23
+#define LCD_PIN_NUM_LCD_DC GPIO_NUM_26
+#define LCD_PIN_NUM_RST GPIO_NUM_27
+
+#define LCD_V_RES 128
+#define LCD_H_RES 160
+#define LCD_PARALLEL_LINES 80
+#define LCD_PIXEL_CLOCK_HZ (20 * 1000 * 1000)
+#define LCD_CMD_BITS 8
+#define LCD_PARAM_BITS 8
+#define LCD_HOST SPI3_HOST
+
+#define STACK_SIZE_SENSOR_TASK 2048
+#define STACK_SIZE_DISPLAY_TASK 4096
 
 struct I2CInterfaceData
 {
@@ -25,11 +47,11 @@ struct I2CInterfaceData
 
 void initI2C()
 {
-    i2c_port_t port{I2C_NUM_0};
+    i2c_port_t port{BMP_I2C_PORT};
     i2c_config_t config{};
     config.mode = I2C_MODE_MASTER;
-    config.sda_io_num = GPIO_NUM_21;
-    config.scl_io_num = GPIO_NUM_22;
+    config.sda_io_num = I2C_SDA_PIN;
+    config.scl_io_num = I2C_SCL_PIN;
     config.sda_pullup_en = false;
     config.scl_pullup_en = false;
     config.master.clk_speed = 100000U;
@@ -43,6 +65,19 @@ void initI2C()
 
     int intr_alloc_flags{0};
     ESP_ERROR_CHECK(i2c_driver_install(port, I2C_MODE_MASTER, slv_rx_buf_len, slv_tx_buf_len, intr_alloc_flags));
+}
+
+void initSPI()
+{
+    spi_bus_config_t buscfg{};
+    buscfg.sclk_io_num = LCD_PIN_NUM_SCLK;
+    buscfg.mosi_io_num = LCD_PIN_NUM_MOSI;
+    buscfg.miso_io_num = -1;
+    buscfg.quadwp_io_num = -1;                                                  // Quad SPI LCD driver is not yet supported
+    buscfg.quadhd_io_num = -1;                                                  // Quad SPI LCD driver is not yet supported
+    buscfg.max_transfer_sz = LCD_H_RES * LCD_PARALLEL_LINES * sizeof(uint16_t); // transfer 80 lines of pixels (assume pixel is RGB565) at most in one SPI transaction
+
+    ESP_ERROR_CHECK(spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO)); // Enable the DMA feature
 }
 
 BMP2_INTF_RET_TYPE bmp2_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t length, const void *intf_ptr)
@@ -140,13 +175,13 @@ void bmp2_error_codes_print_result(int8_t rslt)
     }
 }
 
-void task_bmp280(void *pvParameters)
+void task_sensor(void *pvParameters)
 {
     initI2C();
 
     I2CInterfaceData interface{};
     interface.i2c_addr = BMP2_I2C_ADDR_PRIM;
-    interface.i2c_num = I2C_NUM_0;
+    interface.i2c_num = BMP_I2C_PORT;
 
     bmp2_dev bmp280{};
     bmp280.intf = BMP2_I2C_INTF;
@@ -198,6 +233,34 @@ void task_bmp280(void *pvParameters)
 
 void task_display(void *pvParameters)
 {
+    initSPI();
+
+    esp_lcd_panel_io_handle_t io_handle = nullptr;
+    esp_lcd_panel_io_spi_config_t io_config{};
+    io_config.dc_gpio_num = LCD_PIN_NUM_LCD_DC;
+    io_config.cs_gpio_num = -1;
+    io_config.pclk_hz = LCD_PIXEL_CLOCK_HZ;
+    io_config.lcd_cmd_bits = LCD_CMD_BITS;
+    io_config.lcd_param_bits = LCD_PARAM_BITS;
+    io_config.spi_mode = 3; // CPOL = CPHA = 1
+    io_config.trans_queue_depth = 10;
+
+    // Attach the LCD to the SPI bus
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config, &io_handle));
+
+    esp_lcd_panel_handle_t panel_handle = nullptr;
+    esp_lcd_panel_dev_config_t panel_config{};
+    panel_config.reset_gpio_num = LCD_PIN_NUM_RST;
+    panel_config.rgb_endian = LCD_RGB_ENDIAN_RGB;
+    panel_config.bits_per_pixel = 16;
+
+    // Create LCD panel handle for ST7735, with the SPI IO device handle
+    ESP_ERROR_CHECK(esp_lcd_new_panel_st7735(io_handle, &panel_config, &panel_handle));
+
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+
     while (true)
     {
         vTaskDelay(pdMS_TO_TICKS(20));
@@ -206,12 +269,12 @@ void task_display(void *pvParameters)
 
 extern "C" void app_main(void)
 {
-    TaskHandle_t xHandleBmp280 = nullptr;
-    xTaskCreate(task_bmp280, "BMP280", STACK_SIZE, nullptr, tskIDLE_PRIORITY + 1, &xHandleBmp280);
-    configASSERT(xHandleBmp280);
+    TaskHandle_t xHandleSensor = nullptr;
+    xTaskCreate(task_sensor, "Sensor", STACK_SIZE_SENSOR_TASK, nullptr, tskIDLE_PRIORITY + 1, &xHandleSensor);
+    configASSERT(xHandleSensor);
 
     TaskHandle_t xHandleDisplay = nullptr;
-    xTaskCreate(task_display, "Display", STACK_SIZE, nullptr, tskIDLE_PRIORITY + 1, &xHandleDisplay);
+    xTaskCreate(task_display, "Display", STACK_SIZE_DISPLAY_TASK, nullptr, tskIDLE_PRIORITY + 1, &xHandleDisplay);
     configASSERT(xHandleDisplay);
 
     vTaskSuspend(nullptr);
