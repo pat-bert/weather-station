@@ -4,7 +4,10 @@ idf_component_register(
         "bmp280/bmp2_defs.h"
         "bmp280/bmp2.c"
         "bmp280/bmp2.h"
+        "st7735/esp_lcd_panel_st7735.c"
+        "st7735/esp_lcd_panel_custom_vendor.h"
     INCLUDE_DIRS 
         "."
         "bmp280"
+        "st7735"
 )
