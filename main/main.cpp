@@ -32,8 +32,9 @@
 
 // SPI Settings
 #define LCD_HOST VSPI_HOST
-#define LCD_SPI_CLOCK_HZ (40 * 1000 * 1000)
-#define LCD_SPI_TRADITIONAL_MODE (0) // CPOL = 0, CPHA = 0
+#define LCD_SPI_CLOCK_HZ (40 * 1000 * 1000) // Datasheet specifies 66 ns -> 15 MHz but this is running fine, stops working @80 MHz which
+                                            // is maximum of ESP32 via IO_MUX Pins
+#define LCD_SPI_TRADITIONAL_MODE (0)        // CPOL = 0, CPHA = 0
 
 #define PIN_NUM_LCD_SCLK GPIO_NUM_18
 #define PIN_NUM_LCD_MOSI GPIO_NUM_23
@@ -160,16 +161,6 @@ struct I2CInterfaceData
     uint8_t i2c_addr;
     i2c_port_t i2c_num;
 };
-
-uint16_t RGB888ToRGB565(uint8_t r, uint8_t g, uint8_t b)
-{
-    return (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b & 0xF8));
-}
-
-uint16_t swapBytes(uint16_t bytes)
-{
-    return (bytes << 8) | (bytes >> 8);
-}
 
 void initI2C()
 {
