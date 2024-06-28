@@ -28,11 +28,12 @@
 #define BMP_I2C_PORT I2C_NUM_0
 
 // BMP280 Settings
-#define BMP2_32BIT_COMPENSATION
+#define BMP2_32BIT_COMPENSATION // needs to be defined before bmp include !!!
+#define MEASUREMENT_REFRESH_S (10)
 
 // SPI Settings
 #define LCD_HOST VSPI_HOST
-#define LCD_SPI_CLOCK_HZ (40 * 1000 * 1000) // Datasheet specifies 66 ns -> 15 MHz but this is running fine, stops working @80 MHz which
+#define LCD_SPI_CLOCK_HZ (60 * 1000 * 1000) // Datasheet specifies 66 ns -> 15 MHz but this is running fine, stops working @80 MHz which
                                             // is maximum of ESP32 via IO_MUX Pins
 #define LCD_SPI_TRADITIONAL_MODE (0)        // CPOL = 0, CPHA = 0
 
@@ -52,71 +53,122 @@
 #define LVGL_TICK_PERIOD_MS 2
 #define LVGL_TASK_MAX_DELAY_MS 500
 #define LVGL_TASK_MIN_DELAY_MS 1
-#define LVGL_TASK_STACK_SIZE (4 * 1024)
-#define LVGL_TASK_PRIORITY 2
+#define LVGL_SCREEN_DIVIDER (10)
+#define LVGL_BUFFER_ELEMENTS ((LCD_H_RES * LCD_V_RES) / LVGL_SCREEN_DIVIDER)
+
+// UI Settings
+#define UI_HORIZONTAL_PADDING (2)
+#define UI_VERTICAL_PADDING (2)
+
+#define MIN_TEMPERATURE_C (15)
+#define MAX_TEMPERATURE_C (35)
+#define TEMPERATURE_SCALING_FACTOR (10)
+
+#define MIN_PRESSURE_HPA (700)
+#define MAX_PRESSURE_HPA (1100)
+#define PRESSURE_TICKS_HPA (25)
+#define PRESSURE_SCALING_DIVISOR (100)
 
 // FreeRTOS
 #define STACK_SIZE_SENSOR_TASK 2048
-#define STACK_SIZE_DISPLAY_TASK 4096
+#define LVGL_TASK_PRIORITY 2
+#define LVGL_TASK_STACK_SIZE (4 * 1024)
 
 static SemaphoreHandle_t lvgl_mux = NULL;
 
-static lv_obj_t *meter;
-
-static void set_value(void *indic, int32_t v)
+struct SensorTaskInterface
 {
-    lv_meter_set_indicator_end_value(meter, (lv_meter_indicator_t *)indic, v);
-}
+    QueueHandle_t m_measurementQueue_out;
+};
 
-void example_lvgl_demo_ui(lv_disp_t *disp)
+struct UiTaskInterface
 {
+    QueueHandle_t m_measurementQueue_in;
+    lv_disp_t *m_disp;
+    lv_obj_t *m_pressureMeter;
+    lv_meter_indicator_t *m_indic;
+    lv_obj_t *m_temperatureBar;
+    lv_obj_t *m_temperatureLabel;
+};
+
+void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
+{
+    lv_disp_t *disp = uiTaskInterface->m_disp;
     lv_obj_t *scr = lv_disp_get_scr_act(disp);
-    meter = lv_meter_create(scr);
-    lv_obj_center(meter);
-    lv_obj_set_size(meter, 120, 120);
 
-    /*Add a scale first*/
-    lv_meter_scale_t *scale = lv_meter_add_scale(meter);
-    lv_meter_set_scale_ticks(meter, scale, 41, 2, 5, lv_palette_main(LV_PALETTE_GREY));
-    lv_meter_set_scale_major_ticks(meter, scale, 8, 4, 10, lv_color_black(), 10);
+    static lv_style_t styleLabel;
+    lv_style_init(&styleLabel);
+    lv_style_set_text_font(&styleLabel, &lv_font_montserrat_8);
 
-    lv_meter_indicator_t *indic;
+    // Pressure Meter
+    uiTaskInterface->m_pressureMeter = lv_meter_create(scr);
+    lv_obj_set_align(uiTaskInterface->m_pressureMeter, LV_ALIGN_RIGHT_MID);
 
-    /*Add a blue arc to the start*/
-    indic = lv_meter_add_arc(meter, scale, 3, lv_palette_main(LV_PALETTE_BLUE), 0);
-    lv_meter_set_indicator_start_value(meter, indic, 0);
-    lv_meter_set_indicator_end_value(meter, indic, 20);
+    constexpr lv_coord_t pressureMeterSize{100};
+    lv_obj_set_size(uiTaskInterface->m_pressureMeter, pressureMeterSize, pressureMeterSize);
+    lv_obj_add_style(uiTaskInterface->m_pressureMeter, &styleLabel, LV_PART_TICKS);
 
-    /*Make the tick lines blue at the start of the scale*/
-    indic = lv_meter_add_scale_lines(meter, scale, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_BLUE), false, 0);
-    lv_meter_set_indicator_start_value(meter, indic, 0);
-    lv_meter_set_indicator_end_value(meter, indic, 20);
+    // Add a scale first
+    lv_meter_scale_t *scale = lv_meter_add_scale(uiTaskInterface->m_pressureMeter);
 
-    /*Add a red arc to the end*/
-    indic = lv_meter_add_arc(meter, scale, 3, lv_palette_main(LV_PALETTE_RED), 0);
-    lv_meter_set_indicator_start_value(meter, indic, 80);
-    lv_meter_set_indicator_end_value(meter, indic, 100);
+    constexpr uint16_t tickCount{((MAX_PRESSURE_HPA - MIN_PRESSURE_HPA) / PRESSURE_TICKS_HPA) + 1};
+    constexpr uint16_t lineWidthMinor{2U};
+    constexpr uint16_t lineLengthMinor{5U};
+    constexpr uint16_t nthMajor{4U};
+    constexpr uint16_t lineWidthMajor{4U};
+    constexpr uint16_t lineLengthMajor{10U};
+    constexpr int16_t labelGap{10};
+    constexpr uint32_t angleRange{270};
+    constexpr uint32_t rotation{135};
 
-    /*Make the tick lines red at the end of the scale*/
-    indic = lv_meter_add_scale_lines(meter, scale, lv_palette_main(LV_PALETTE_RED), lv_palette_main(LV_PALETTE_RED), false, 0);
-    lv_meter_set_indicator_start_value(meter, indic, 80);
-    lv_meter_set_indicator_end_value(meter, indic, 100);
+    lv_meter_set_scale_ticks(uiTaskInterface->m_pressureMeter, scale, tickCount, lineWidthMinor, lineLengthMinor, lv_palette_main(LV_PALETTE_GREY));
+    lv_meter_set_scale_major_ticks(uiTaskInterface->m_pressureMeter, scale, nthMajor, lineWidthMajor, lineLengthMajor, lv_color_black(), labelGap);
+    lv_meter_set_scale_range(uiTaskInterface->m_pressureMeter, scale, MIN_PRESSURE_HPA, MAX_PRESSURE_HPA, angleRange, rotation);
 
-    /*Add a needle line indicator*/
-    indic = lv_meter_add_needle_line(meter, scale, 4, lv_palette_main(LV_PALETTE_GREY), -10);
+    // Add a blue arc to the start
+    uiTaskInterface->m_indic = lv_meter_add_arc(uiTaskInterface->m_pressureMeter, scale, 3, lv_palette_main(LV_PALETTE_BLUE), 0);
+    lv_meter_set_indicator_start_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, 0);
+    lv_meter_set_indicator_end_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, 20);
 
-    /*Create an animation to set the value*/
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_exec_cb(&a, set_value);
-    lv_anim_set_var(&a, indic);
-    lv_anim_set_values(&a, 0, 100);
-    lv_anim_set_time(&a, 2000);
-    lv_anim_set_repeat_delay(&a, 100);
-    lv_anim_set_playback_time(&a, 500);
-    lv_anim_set_playback_delay(&a, 100);
-    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_start(&a);
+    // Make the tick lines blue at the start of the scale
+    uiTaskInterface->m_indic = lv_meter_add_scale_lines(uiTaskInterface->m_pressureMeter, scale, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_BLUE), false, 0);
+    lv_meter_set_indicator_start_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, 0);
+    lv_meter_set_indicator_end_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, 20);
+
+    // Add a red arc to the end
+    uiTaskInterface->m_indic = lv_meter_add_arc(uiTaskInterface->m_pressureMeter, scale, 3, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_meter_set_indicator_start_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, 80);
+    lv_meter_set_indicator_end_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, 100);
+
+    // Make the tick lines red at the end of the scale
+    uiTaskInterface->m_indic = lv_meter_add_scale_lines(uiTaskInterface->m_pressureMeter, scale, lv_palette_main(LV_PALETTE_RED), lv_palette_main(LV_PALETTE_RED), false, 0);
+    lv_meter_set_indicator_start_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, 80);
+    lv_meter_set_indicator_end_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, 100);
+
+    // Add a needle line indicator
+    uiTaskInterface->m_indic = lv_meter_add_needle_line(uiTaskInterface->m_pressureMeter, scale, 4, lv_palette_main(LV_PALETTE_GREY), -10);
+
+    // Temperature bar
+    lv_obj_t *temperatureContainer = lv_obj_create(scr);
+    lv_obj_set_align(temperatureContainer, LV_ALIGN_LEFT_MID);
+    lv_obj_set_size(temperatureContainer, 40, LCD_V_RES);
+
+    static lv_style_t styleIndic;
+    lv_style_init(&styleIndic);
+    lv_style_set_bg_opa(&styleIndic, LV_OPA_COVER);
+    lv_style_set_bg_color(&styleIndic, lv_palette_main(LV_PALETTE_RED));
+    lv_style_set_bg_grad_color(&styleIndic, lv_palette_main(LV_PALETTE_BLUE));
+    lv_style_set_bg_grad_dir(&styleIndic, LV_GRAD_DIR_VER);
+
+    uiTaskInterface->m_temperatureBar = lv_bar_create(temperatureContainer);
+    lv_obj_add_style(uiTaskInterface->m_temperatureBar, &styleIndic, LV_PART_INDICATOR);
+    lv_obj_set_size(uiTaskInterface->m_temperatureBar, 20, LCD_V_RES * (2.0 / 3.0));
+    lv_obj_set_align(uiTaskInterface->m_temperatureBar, LV_ALIGN_TOP_MID);
+    lv_bar_set_range(uiTaskInterface->m_temperatureBar, TEMPERATURE_SCALING_FACTOR * MIN_TEMPERATURE_C, TEMPERATURE_SCALING_FACTOR * MAX_TEMPERATURE_C);
+
+    uiTaskInterface->m_temperatureLabel = lv_label_create(temperatureContainer);
+    lv_obj_add_style(uiTaskInterface->m_temperatureLabel, &styleLabel, LV_PART_MAIN);
+    lv_obj_set_align(uiTaskInterface->m_temperatureLabel, LV_ALIGN_BOTTOM_MID);
 }
 
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
@@ -190,9 +242,9 @@ void initSPI()
     buscfg.sclk_io_num = PIN_NUM_LCD_SCLK;
     buscfg.mosi_io_num = PIN_NUM_LCD_MOSI;
     buscfg.miso_io_num = -1;
-    buscfg.quadwp_io_num = -1;                                  // Quad SPI LCD driver is not yet supported
-    buscfg.quadhd_io_num = -1;                                  // Quad SPI LCD driver is not yet supported
-    buscfg.max_transfer_sz = LCD_H_RES * 80 * sizeof(uint16_t); // transfer 80 lines of pixels (assume pixel is RGB565) at most in one SPI transaction
+    buscfg.quadwp_io_num = -1;                                        // Quad SPI LCD driver is not yet supported
+    buscfg.quadhd_io_num = -1;                                        // Quad SPI LCD driver is not yet supported
+    buscfg.max_transfer_sz = LVGL_BUFFER_ELEMENTS * sizeof(uint16_t); // transfer x lines of pixels (assume pixel is RGB565) at most in one SPI transaction
 
     ESP_ERROR_CHECK(spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO)); // Enable the DMA feature
 }
@@ -210,7 +262,7 @@ esp_lcd_panel_io_handle_t initPanelIO(lv_disp_drv_t *disp_drv)
     io_config.lcd_param_bits = LCD_PARAM_BITS;
     io_config.spi_mode = LCD_SPI_TRADITIONAL_MODE;
     io_config.flags.sio_mode = 1; // only MOSI, no MISO
-    io_config.trans_queue_depth = 10;
+    io_config.trans_queue_depth = LVGL_SCREEN_DIVIDER;
     io_config.on_color_trans_done = notify_lvgl_flush_ready;
     io_config.user_ctx = disp_drv;
 
@@ -330,8 +382,40 @@ void bmp2_error_codes_print_result(int8_t rslt)
     }
 }
 
+void task_ui(void *pvParameters)
+{
+    static const char tag[] = "UI";
+    UiTaskInterface *uiTaskInterface{static_cast<UiTaskInterface *>(pvParameters)};
+
+    // Lock the mutex due to the LVGL APIs are not thread-safe
+    if (lvgl_lock(-1))
+    {
+        lvgl_create_ui(uiTaskInterface);
+        // Release the mutex
+        lvgl_unlock();
+    }
+
+    while (true)
+    {
+        bmp2_data sensorData{};
+        if (xQueueReceive(uiTaskInterface->m_measurementQueue_in, &sensorData, portMAX_DELAY) == pdPASS)
+        {
+            if (lvgl_lock(-1))
+            {
+                ESP_LOGI(tag, "%.2f °C %.2f Pa", sensorData.temperature, sensorData.pressure);
+                lv_label_set_text_fmt(uiTaskInterface->m_temperatureLabel, "%.1f °C", sensorData.temperature);
+                lv_bar_set_value(uiTaskInterface->m_temperatureBar, sensorData.temperature * TEMPERATURE_SCALING_FACTOR, LV_ANIM_OFF);
+                lv_meter_set_indicator_end_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, sensorData.pressure / PRESSURE_SCALING_DIVISOR);
+                lvgl_unlock();
+            }
+        }
+    }
+}
+
 void task_sensor(void *pvParameters)
 {
+    const SensorTaskInterface *sensorTaskInterface{static_cast<SensorTaskInterface *>(pvParameters)};
+
     initI2C();
 
     I2CInterfaceData interface{};
@@ -361,11 +445,9 @@ void task_sensor(void *pvParameters)
     rslt = bmp2_set_config(&conf, &bmp280);
     bmp2_error_codes_print_result(rslt);
 
-    bmp2_data sensorData{};
-
     while (true)
     {
-        /* Set normal power mode */
+        /* Set forced power mode */
         rslt = bmp2_set_power_mode(BMP2_POWERMODE_FORCED, &conf, &bmp280);
         bmp2_error_codes_print_result(rslt);
 
@@ -373,16 +455,20 @@ void task_sensor(void *pvParameters)
         uint32_t meas_time_us;
         rslt = bmp2_compute_meas_time(&meas_time_us, &conf, &bmp280);
         bmp2_error_codes_print_result(rslt);
-
-        uint32_t meas_time_ms = (meas_time_us / 1000) + (meas_time_us % 1000 > 0);
-        vTaskDelay(pdMS_TO_TICKS(meas_time_ms));
+        ets_delay_us(meas_time_us);
 
         /* Read compensated data */
+        bmp2_data sensorData{};
         rslt = bmp2_get_sensor_data(&sensorData, &bmp280);
         bmp2_error_codes_print_result(rslt);
         ESP_LOGI("BMP280", "%.2f °C %.2f Pa", sensorData.temperature, sensorData.pressure);
 
-        vTaskDelay(pdMS_TO_TICKS(1000 * 60));
+        if (xQueueSend(sensorTaskInterface->m_measurementQueue_out, &sensorData, portMAX_DELAY) != pdPASS)
+        {
+            ESP_LOGE("BMP280", "Failed to send measurement data to queue");
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000 * MEASUREMENT_REFRESH_S));
     }
 }
 
@@ -397,6 +483,7 @@ static void lvgl_port_task(void *arg)
         if (lvgl_lock(-1))
         {
             task_delay_ms = lv_timer_handler();
+
             // Release the mutex
             lvgl_unlock();
         }
@@ -414,8 +501,12 @@ static void lvgl_port_task(void *arg)
 
 extern "C" void app_main(void)
 {
-    TaskHandle_t xHandleSensor = nullptr;
-    xTaskCreate(task_sensor, "Sensor", STACK_SIZE_SENSOR_TASK, nullptr, tskIDLE_PRIORITY + 1, &xHandleSensor);
+    QueueHandle_t measurementQueue{xQueueCreate(5, sizeof(bmp2_data))};
+    configASSERT(measurementQueue);
+
+    TaskHandle_t xHandleSensor{nullptr};
+    SensorTaskInterface sensorTaskInterface{measurementQueue};
+    xTaskCreate(task_sensor, "Sensor", STACK_SIZE_SENSOR_TASK, static_cast<void *>(&sensorTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSensor);
     configASSERT(xHandleSensor);
 
     static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
@@ -436,12 +527,12 @@ extern "C" void app_main(void)
     lv_init();
     // alloc draw buffers used by LVGL
     // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
-    lv_color_t *buf1 = (lv_color_t *)heap_caps_malloc(LCD_H_RES * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    lv_color_t *buf1 = (lv_color_t *)heap_caps_malloc(LVGL_BUFFER_ELEMENTS * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     assert(buf1);
-    lv_color_t *buf2 = (lv_color_t *)heap_caps_malloc(LCD_H_RES * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    lv_color_t *buf2 = (lv_color_t *)heap_caps_malloc(LVGL_BUFFER_ELEMENTS * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     assert(buf2);
     // initialize LVGL draw buffers
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, LCD_H_RES * 20);
+    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, LVGL_BUFFER_ELEMENTS);
 
     ESP_LOGI("MAIN", "Register display driver to LVGL");
     lv_disp_drv_init(&disp_drv);
@@ -470,14 +561,10 @@ extern "C" void app_main(void)
     xTaskCreate(lvgl_port_task, "Display", LVGL_TASK_STACK_SIZE, nullptr, LVGL_TASK_PRIORITY, &xHandleDisplay);
     configASSERT(xHandleDisplay);
 
-    ESP_LOGI("MAIN", "Display LVGL Meter Widget");
-    // Lock the mutex due to the LVGL APIs are not thread-safe
-    if (lvgl_lock(-1))
-    {
-        example_lvgl_demo_ui(disp);
-        // Release the mutex
-        lvgl_unlock();
-    }
+    UiTaskInterface uiTaskInterface{measurementQueue, disp};
+    TaskHandle_t xHandleUi{nullptr};
+    xTaskCreate(task_ui, "UI", STACK_SIZE_SENSOR_TASK, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleUi);
+    configASSERT(xHandleUi);
 
     vTaskSuspend(nullptr);
 }
