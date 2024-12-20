@@ -1,5 +1,5 @@
-#ifndef WIFI_HPP_INCLUDED
-#define WIFI_HPP_INCLUDED
+#ifndef WIFI_CLIENT_HPP_INCLUDED
+#define WIFI_CLIENT_HPP_INCLUDED
 
 #include "esp_err.h"
 #include "esp_event.h"

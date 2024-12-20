@@ -182,7 +182,7 @@ extern "C" {
 #define BMP2_SPI_WR_MASK                              UINT8_C(0x7F)
 
 /*! @name Delay definition */
-#define BMP2_DELAY_US_STARTUP_TIME                    UINT8_C(2000)
+#define BMP2_DELAY_MS_STARTUP_TIME                    UINT8_C(2)
 
 /*! @name Power modes */
 #define BMP2_POWERMODE_SLEEP                          UINT8_C(0x00)
@@ -415,7 +415,7 @@ typedef BMP2_INTF_RET_TYPE (*bmp2_write_fptr_t)(uint8_t reg_addr, const uint8_t 
  * @param[in,out] intf_ptr : Void pointer that can enable the linking of descriptors
  *                           for interface related callbacks
  */
-typedef void (*bmp2_delay_us_fptr_t)(uint32_t period, void *intf_ptr);
+typedef void (*bmp2_delay_ms_fptr_t)(uint32_t period, void *intf_ptr);
 
 /******************************************************************************/
 /*!  @name         Enum Declarations                                  */
@@ -587,7 +587,7 @@ struct bmp2_dev
     bmp2_write_fptr_t write;
 
     /*! Delay(in us) function pointer */
-    bmp2_delay_us_fptr_t delay_us;
+    bmp2_delay_ms_fptr_t delay_ms;
 
     /*! Powermode of the sensor */
     uint8_t power_mode;

@@ -365,7 +365,7 @@ int8_t bmp2_soft_reset(struct bmp2_dev *dev)
     if (rslt == BMP2_OK)
     {
         /* Soft-reset execution takes 2 ms */
-        dev->delay_us(BMP2_DELAY_US_STARTUP_TIME, dev->intf_ptr);
+        dev->delay_ms(BMP2_DELAY_MS_STARTUP_TIME, dev->intf_ptr);
     }
 
     return rslt;
@@ -589,7 +589,7 @@ static int8_t null_ptr_check(const struct bmp2_dev *dev)
 {
     int8_t rslt;
 
-    if ((dev == NULL) || (dev->read == NULL) || (dev->write == NULL) || (dev->delay_us == NULL))
+    if ((dev == NULL) || (dev->read == NULL) || (dev->write == NULL) || (dev->delay_ms == NULL))
     {
         /* Null-pointer found */
         rslt = BMP2_E_NULL_PTR;
