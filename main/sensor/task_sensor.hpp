@@ -3,7 +3,6 @@
 
 #include "sensor_task_interface.hpp"
 
-void initI2C();
 void task_sensor(void *pvParameters);
 
 #endif

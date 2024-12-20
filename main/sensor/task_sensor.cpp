@@ -5,73 +5,63 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
-#define ACK_CHECK_EN true /*!< I2C master will check ack from slave*/
+#include "driver/i2c_master.h"
 
-void initI2C()
+#include "rom/ets_sys.h"
+
+#include <cstring>
+
+static const char TAG[] = "bmp280";
+
+void initI2C(i2c_master_dev_handle_t &deviceHandle)
 {
-    i2c_port_t port{static_cast<i2c_port_t>(CONFIG_BMP_I2C_PORT)};
-    i2c_config_t config{};
-    config.mode = I2C_MODE_MASTER;
-    config.sda_io_num = CONFIG_BMP_SDA_GPIO;
-    config.scl_io_num = CONFIG_BMP_SCL_GPIO;
-    config.sda_pullup_en = false;
-    config.scl_pullup_en = false;
-    config.master.clk_speed = 100000U;
-    config.clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL;
+    ESP_LOGI(TAG, "Creating I2C Master Bus");
+    i2c_master_bus_config_t busConfig{};
+    busConfig.i2c_port = CONFIG_BMP_I2C_PORT;
+    busConfig.sda_io_num = static_cast<gpio_num_t>(CONFIG_BMP_SDA_GPIO);
+    busConfig.scl_io_num = static_cast<gpio_num_t>(CONFIG_BMP_SCL_GPIO);
+    busConfig.clk_source = I2C_CLK_SRC_DEFAULT;
+    busConfig.glitch_ignore_cnt = 7;
+    busConfig.intr_priority = 0;
+    busConfig.flags.enable_internal_pullup = 0;
 
-    ESP_ERROR_CHECK(i2c_param_config(port, &config));
+    i2c_master_bus_handle_t busHandle{};
+    ESP_ERROR_CHECK(i2c_new_master_bus(&busConfig, &busHandle));
 
-    // Not needed in master mode
-    size_t slv_rx_buf_len{0};
-    size_t slv_tx_buf_len{0};
+    ESP_LOGI(TAG, "Adding I2C device with address %#07x to bus", BMP2_I2C_ADDR_PRIM);
+    i2c_device_config_t deviceConfig{};
+    deviceConfig.scl_speed_hz = CONFIG_BMP_I2C_CLOCK_KHZ * 1000U;
+    deviceConfig.device_address = BMP2_I2C_ADDR_PRIM;
+    deviceConfig.dev_addr_length = I2C_ADDR_BIT_LEN_7;
 
-    int intr_alloc_flags{0};
-    ESP_ERROR_CHECK(i2c_driver_install(port, I2C_MODE_MASTER, slv_rx_buf_len, slv_tx_buf_len, intr_alloc_flags));
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(busHandle, &deviceConfig, &deviceHandle));
 }
 
 BMP2_INTF_RET_TYPE bmp2_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t length, const void *intf_ptr)
 {
-    if (length == 0)
+    if ((length == 0) || (length > static_cast<uint32_t>(INT32_MAX)))
     {
         return BMP2_INTF_RET_SUCCESS;
     }
 
-    const I2CInterfaceData *interface{(I2CInterfaceData *)intf_ptr};
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    // first, send device address (indicating write) & register to be read
-    i2c_master_write_byte(cmd, (interface->i2c_addr << 1), ACK_CHECK_EN);
-    // send register we want
-    i2c_master_write_byte(cmd, reg_addr, ACK_CHECK_EN);
-    // Send repeated start
-    i2c_master_start(cmd);
-    // now send device address (indicating read) & read data
-    i2c_master_write_byte(cmd, (interface->i2c_addr << 1) | I2C_MASTER_READ, ACK_CHECK_EN);
-    if (length > 1)
-    {
-        i2c_master_read(cmd, reg_data, length - 1, I2C_MASTER_ACK);
-    }
-    i2c_master_read_byte(cmd, reg_data + length - 1, I2C_MASTER_LAST_NACK);
-    i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(interface->i2c_num, cmd, pdMS_TO_TICKS(1000));
-    i2c_cmd_link_delete(cmd);
+    const i2c_master_dev_handle_t *deviceHandle{static_cast<const i2c_master_dev_handle_t *>(intf_ptr)};
+    esp_err_t ret = i2c_master_transmit_receive(*deviceHandle, &reg_addr, 1, reg_data, static_cast<int32_t>(length), pdMS_TO_TICKS(10000));
     return (ESP_OK == ret) ? BMP2_INTF_RET_SUCCESS : -1;
 }
 
 BMP2_INTF_RET_TYPE bmp2_i2c_write(uint8_t reg_addr, const uint8_t *reg_data, uint32_t length, const void *intf_ptr)
 {
-    const I2CInterfaceData *interface{(I2CInterfaceData *)intf_ptr};
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    // first, send device address (indicating write) & register to be written
-    i2c_master_write_byte(cmd, (interface->i2c_addr << 1) | I2C_MASTER_WRITE, ACK_CHECK_EN);
-    // send register we want
-    i2c_master_write_byte(cmd, reg_addr, ACK_CHECK_EN);
-    // write the data
-    i2c_master_write(cmd, reg_data, length, ACK_CHECK_EN);
-    i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(interface->i2c_num, cmd, pdMS_TO_TICKS(1000));
-    i2c_cmd_link_delete(cmd);
+    if ((length > static_cast<uint32_t>(INT32_MAX)) || (length > BMP2_MAX_LEN))
+    {
+        return -1;
+    }
+
+    uint8_t writeBuffer[BMP2_MAX_LEN + 1];
+    writeBuffer[0] = reg_addr;
+    std::memcpy(writeBuffer + 1, reg_data, length);
+
+    const i2c_master_dev_handle_t *deviceHandle{static_cast<const i2c_master_dev_handle_t *>(intf_ptr)};
+    esp_err_t ret = i2c_master_transmit(*deviceHandle, writeBuffer, static_cast<int32_t>(length + 1), pdMS_TO_TICKS(10000));
     return (ESP_OK == ret) ? BMP2_INTF_RET_SUCCESS : -1;
 }
 
@@ -126,20 +116,16 @@ void bmp2_error_codes_print_result(int8_t rslt)
 
 void task_sensor(void *pvParameters)
 {
-    const char TAG[] = "bmp280";
     ESP_LOGI(TAG, "Starting sensor task");
+
+    i2c_master_dev_handle_t deviceHandle{};
+    initI2C(deviceHandle);
 
     const SensorTaskInterface *sensorTaskInterface{static_cast<SensorTaskInterface *>(pvParameters)};
 
-    initI2C();
-
-    I2CInterfaceData interface{};
-    interface.i2c_addr = BMP2_I2C_ADDR_PRIM;
-    interface.i2c_num = static_cast<i2c_port_t>(CONFIG_BMP_I2C_PORT);
-
     bmp2_dev bmp280{};
     bmp280.intf = BMP2_I2C_INTF;
-    bmp280.intf_ptr = (void *)&interface;
+    bmp280.intf_ptr = static_cast<void *>(&deviceHandle);
     bmp280.read = bmp2_i2c_read;
     bmp280.write = bmp2_i2c_write;
     bmp280.delay_ms = bmp2_delay_ms;
@@ -167,12 +153,10 @@ void task_sensor(void *pvParameters)
         bmp2_error_codes_print_result(rslt);
 
         /* Calculate measurement time in microseconds */
-        uint32_t measurementTimeUs{0U};
-        rslt = bmp2_compute_meas_time(&measurementTimeUs, &conf, &bmp280);
+        uint32_t meas_time_us;
+        rslt = bmp2_compute_meas_time(&meas_time_us, &conf, &bmp280);
         bmp2_error_codes_print_result(rslt);
-        // divide by 1000 and ceiling
-        uint32_t measurementTimeMs{measurementTimeUs / 1000U + ((measurementTimeUs % 1000U != 0U) ? 1U : 0U)};
-        vTaskDelay(pdMS_TO_TICKS(measurementTimeMs));
+        ets_delay_us(meas_time_us);
 
         /* Read compensated data */
         bmp2_data sensorData{};

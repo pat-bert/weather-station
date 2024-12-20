@@ -13,10 +13,4 @@ struct SensorTaskInterface
     QueueHandle_t m_measurementQueue_out;
 };
 
-struct I2CInterfaceData
-{
-    uint8_t i2c_addr;
-    i2c_port_t i2c_num;
-};
-
 #endif
