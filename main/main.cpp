@@ -33,7 +33,7 @@
 
 // LVGL Settings
 #define LVGL_TICK_PERIOD_MS 2
-#define LVGL_TASK_MAX_DELAY_MS 500
+#define LVGL_TASK_MAX_DELAY_MS (1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS / 2)
 #define LVGL_TASK_MIN_DELAY_MS 1
 #define LVGL_SCREEN_DIVIDER (10)
 #define LVGL_BUFFER_ELEMENTS ((CONFIG_LCD_H_RES * CONFIG_LCD_V_RES) / LVGL_SCREEN_DIVIDER)
@@ -51,9 +51,7 @@
 // FreeRTOS
 #define STACK_SIZE_SENSOR_TASK (3 * 1024)
 #define LVGL_TASK_PRIORITY 2
-#define LVGL_TASK_STACK_SIZE (4 * 1024)
-
-static SemaphoreHandle_t lvgl_mux = NULL;
+#define LVGL_TASK_STACK_SIZE (3 * 1024)
 
 void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
 {
@@ -190,19 +188,6 @@ static void increase_lvgl_tick(void *arg)
     lv_tick_inc(LVGL_TICK_PERIOD_MS);
 }
 
-bool lvgl_lock(int timeout_ms)
-{
-    // Convert timeout in milliseconds to FreeRTOS ticks
-    // If `timeout_ms` is set to -1, the program will block until the condition is met
-    const TickType_t timeout_ticks = (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-    return xSemaphoreTakeRecursive(lvgl_mux, timeout_ticks) == pdTRUE;
-}
-
-void lvgl_unlock(void)
-{
-    xSemaphoreGiveRecursive(lvgl_mux);
-}
-
 void initSPI()
 {
     spi_bus_config_t buscfg{};
@@ -254,113 +239,10 @@ esp_lcd_panel_handle_t initPanel(lv_disp_drv_t *disp_drv)
     return panel_handle;
 }
 
-void task_ui(void *pvParameters)
-{
-    static const char tag[] = "gui";
-    UiTaskInterface *uiTaskInterface{static_cast<UiTaskInterface *>(pvParameters)};
-
-    // Lock the mutex due to the LVGL APIs are not thread-safe
-    if (lvgl_lock(-1))
-    {
-        lvgl_create_ui(uiTaskInterface);
-        // Release the mutex
-        lvgl_unlock();
-    }
-
-    while (true)
-    {
-        bmp2_data sensorData{};
-        if (xQueueReceive(uiTaskInterface->m_measurementQueue_in, &sensorData, portMAX_DELAY) == pdPASS)
-        {
-            if (lvgl_lock(-1))
-            {
-                // Get time
-                std::time_t now{};
-                std::time(&now);
-
-                std::tm *timeinfo{};
-                timeinfo = std::localtime(&now);
-
-                char timeStringBuffer[std::size("Wednesday dd.mm.yyyy hh:mm")];
-                std::strftime(timeStringBuffer, sizeof(timeStringBuffer), "%A %e.%m.%Y %H:%M", timeinfo);
-
-                ESP_LOGI(tag, "%.2f °C %.2f Pa @ %s", sensorData.temperature, sensorData.pressure, timeStringBuffer);
-
-                // Update current date and time
-                if (timeinfo->tm_year > (1970 - 1900))
-                {
-                    lv_label_set_text(uiTaskInterface->m_timeLabel, timeStringBuffer);
-                }
-
-                // Update sensor readings
-                lv_label_set_text_fmt(uiTaskInterface->m_temperatureLabel, "%.1f °C", sensorData.temperature);
-                lv_bar_set_value(uiTaskInterface->m_temperatureBar, sensorData.temperature * TEMPERATURE_SCALING_FACTOR, LV_ANIM_OFF);
-                lv_meter_set_indicator_end_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, sensorData.pressure / PRESSURE_SCALING_DIVISOR);
-
-                lvgl_unlock();
-            }
-        }
-    }
-}
-
 static void task_lvgl(void *arg)
 {
     const char TAG[] = "lvgl";
     ESP_LOGI(TAG, "Starting LVGL task");
-    uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
-
-    while (true)
-    {
-        // Lock the mutex due to the LVGL APIs are not thread-safe
-        if (lvgl_lock(-1))
-        {
-            task_delay_ms = lv_timer_handler();
-
-            // Release the mutex
-            lvgl_unlock();
-        }
-        if (task_delay_ms > LVGL_TASK_MAX_DELAY_MS)
-        {
-            task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
-        }
-        else if (task_delay_ms < LVGL_TASK_MIN_DELAY_MS)
-        {
-            task_delay_ms = LVGL_TASK_MIN_DELAY_MS;
-        }
-        vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
-    }
-}
-
-extern "C" void app_main(void)
-{
-    const char *TAG = "main";
-
-    WifiClient wifi_client{};
-    ESP_ERROR_CHECK(wifi_client.init());
-
-    esp_err_t ret = wifi_client.connect(CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to connect to Wi-Fi network");
-    }
-
-    // Set timezone
-    setenv("TZ", CONFIG_TIMEZONE, 1);
-    tzset();
-
-    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, CONFIG_SNTP_SERVER_URL);
-    esp_sntp_set_sync_interval(CONFIG_SNTP_INTERVAL_HOURS * 3600 * 1000);
-    esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
-    esp_sntp_init();
-
-    QueueHandle_t measurementQueue{xQueueCreate(5, sizeof(bmp2_data))};
-    configASSERT(measurementQueue);
-
-    TaskHandle_t xHandleSensor{nullptr};
-    SensorTaskInterface sensorTaskInterface{measurementQueue};
-    xTaskCreate(task_sensor, "sensor", STACK_SIZE_SENSOR_TASK, static_cast<void *>(&sensorTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSensor);
-    configASSERT(xHandleSensor);
 
     static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
     static lv_disp_drv_t disp_drv;      // contains callback functions
@@ -406,17 +288,92 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000));
 
-    lvgl_mux = xSemaphoreCreateRecursiveMutex();
-    assert(lvgl_mux);
+    UiTaskInterface *uiTaskInterface{static_cast<UiTaskInterface *>(arg)};
+    uiTaskInterface->m_disp = disp;
+    lvgl_create_ui(uiTaskInterface);
 
+    uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
+
+    while (true)
+    {
+        task_delay_ms = lv_timer_handler();
+
+        if (task_delay_ms > LVGL_TASK_MAX_DELAY_MS)
+        {
+            task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
+        }
+        else if (task_delay_ms < LVGL_TASK_MIN_DELAY_MS)
+        {
+            task_delay_ms = LVGL_TASK_MIN_DELAY_MS;
+        }
+
+        // Since no animations need to run frequently this task can wait for sensor data to update the UI
+        // using xQueueReceive instead of yielding to a second task using vTaskDelay
+        bmp2_data sensorData{};
+        if (xQueueReceive(uiTaskInterface->m_measurementQueue_in, &sensorData, pdMS_TO_TICKS(task_delay_ms)) == pdPASS)
+        {
+            // Get time
+            std::time_t now{};
+            std::time(&now);
+
+            std::tm *timeinfo{};
+            timeinfo = std::localtime(&now);
+
+            char timeStringBuffer[std::size("Wednesday dd.mm.yyyy hh:mm")];
+            std::strftime(timeStringBuffer, sizeof(timeStringBuffer), "%A %e.%m.%Y %H:%M", timeinfo);
+
+            ESP_LOGI(TAG, "%.2f °C %.2f Pa @ %s", sensorData.temperature, sensorData.pressure, timeStringBuffer);
+
+            // Update current date and time
+            if (timeinfo->tm_year > (1970 - 1900))
+            {
+                lv_label_set_text(uiTaskInterface->m_timeLabel, timeStringBuffer);
+            }
+
+            // Update sensor readings
+            lv_label_set_text_fmt(uiTaskInterface->m_temperatureLabel, "%.1f °C", sensorData.temperature);
+            lv_bar_set_value(uiTaskInterface->m_temperatureBar, sensorData.temperature * TEMPERATURE_SCALING_FACTOR, LV_ANIM_OFF);
+            lv_meter_set_indicator_end_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, sensorData.pressure / PRESSURE_SCALING_DIVISOR);
+        }
+    }
+}
+
+extern "C" void app_main(void)
+{
+    const char *TAG = "main";
+
+    WifiClient wifi_client{};
+    ESP_ERROR_CHECK(wifi_client.init());
+
+    esp_err_t ret = wifi_client.connect(CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to connect to Wi-Fi network");
+    }
+
+    // Set timezone
+    setenv("TZ", CONFIG_TIMEZONE, 1);
+    tzset();
+
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, CONFIG_SNTP_SERVER_URL);
+    esp_sntp_set_sync_interval(CONFIG_SNTP_INTERVAL_HOURS * 3600 * 1000);
+    esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
+    esp_sntp_init();
+
+    QueueHandle_t measurementQueue{xQueueCreate(5, sizeof(bmp2_data))};
+    configASSERT(measurementQueue);
+
+    TaskHandle_t xHandleSensor{nullptr};
+    SensorTaskInterface sensorTaskInterface{measurementQueue};
+    xTaskCreate(task_sensor, "sensor", STACK_SIZE_SENSOR_TASK, static_cast<void *>(&sensorTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSensor);
+    configASSERT(xHandleSensor);
+
+    UiTaskInterface uiTaskInterface{};
+    uiTaskInterface.m_measurementQueue_in = sensorTaskInterface.m_measurementQueue_out;
     TaskHandle_t xHandleDisplay = nullptr;
-    xTaskCreate(task_lvgl, "lvgl", LVGL_TASK_STACK_SIZE, nullptr, LVGL_TASK_PRIORITY, &xHandleDisplay);
+    xTaskCreate(task_lvgl, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), LVGL_TASK_PRIORITY, &xHandleDisplay);
     configASSERT(xHandleDisplay);
-
-    UiTaskInterface uiTaskInterface{measurementQueue, disp};
-    TaskHandle_t xHandleUi{nullptr};
-    xTaskCreate(task_ui, "gui", STACK_SIZE_SENSOR_TASK, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleUi);
-    configASSERT(xHandleUi);
 
     esp_pm_config_t pm_config = {};
     ESP_ERROR_CHECK(esp_pm_get_configuration(&pm_config));
