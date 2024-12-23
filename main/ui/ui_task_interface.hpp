@@ -1,6 +1,7 @@
 #ifndef UI_TASK_INTERFACE_HPP_INCLUDED
 #define UI_TASK_INTERFACE_HPP_INCLUDED
 
+#include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "lvgl.h"
 

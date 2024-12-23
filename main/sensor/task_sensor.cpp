@@ -1,19 +1,18 @@
 #include "task_sensor.hpp"
 
 #include "bmp280/bmp2.h"
+#include "bh1750/bh1750_defs.hpp"
 
 #include "esp_log.h"
 #include "esp_timer.h"
-
-#include "driver/i2c_master.h"
 
 #include "rom/ets_sys.h"
 
 #include <cstring>
 
-static const char TAG[] = "bmp280";
+static const char TAG[] = "sensor";
 
-void initI2C(i2c_master_dev_handle_t &deviceHandle)
+i2c_master_bus_handle_t initMasterI2C()
 {
     ESP_LOGI(TAG, "Creating I2C Master Bus");
     i2c_master_bus_config_t busConfig{};
@@ -28,13 +27,35 @@ void initI2C(i2c_master_dev_handle_t &deviceHandle)
     i2c_master_bus_handle_t busHandle{};
     ESP_ERROR_CHECK(i2c_new_master_bus(&busConfig, &busHandle));
 
-    ESP_LOGI(TAG, "Adding I2C device with address %#07x to bus", BMP2_I2C_ADDR_PRIM);
+    return busHandle;
+}
+
+i2c_master_dev_handle_t initTempPressureI2CSlave(const i2c_master_bus_handle_t busHandle)
+{
+    ESP_LOGI(TAG, "Adding T+P I2C sensor with address %#07x to bus", BMP2_I2C_ADDR_PRIM);
     i2c_device_config_t deviceConfig{};
     deviceConfig.scl_speed_hz = CONFIG_BMP_I2C_CLOCK_KHZ * 1000U;
     deviceConfig.device_address = BMP2_I2C_ADDR_PRIM;
     deviceConfig.dev_addr_length = I2C_ADDR_BIT_LEN_7;
 
+    i2c_master_dev_handle_t deviceHandle{};
     ESP_ERROR_CHECK(i2c_master_bus_add_device(busHandle, &deviceConfig, &deviceHandle));
+
+    return deviceHandle;
+}
+
+i2c_master_dev_handle_t initIlluminanceI2CSlave(const i2c_master_bus_handle_t busHandle)
+{
+    ESP_LOGI(TAG, "Adding illuminance I2C sensor with address %#07x to bus", BH1750_I2C_ADDR_PRIM);
+    i2c_device_config_t deviceConfig{};
+    deviceConfig.scl_speed_hz = CONFIG_BMP_I2C_CLOCK_KHZ * 1000U;
+    deviceConfig.device_address = BH1750_I2C_ADDR_PRIM;
+    deviceConfig.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+
+    i2c_master_dev_handle_t deviceHandle{};
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(busHandle, &deviceConfig, &deviceHandle));
+
+    return deviceHandle;
 }
 
 BMP2_INTF_RET_TYPE bmp2_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t length, const void *intf_ptr)
@@ -73,42 +94,33 @@ void bmp2_delay_ms(uint32_t period, void *intf_ptr)
 
 void bmp2_error_codes_print_result(int8_t rslt)
 {
-    static const char tag[] = "bmp280";
     if (rslt != BMP2_OK)
     {
         switch (rslt)
         {
         case BMP2_E_NULL_PTR:
-            ESP_LOGE(tag, "Error [%d] : Null pointer error.", rslt);
-            ESP_LOGE(
-                tag, "It occurs when the user tries to assign value (not address) to a pointer, which has been initialized to NULL.\r\n");
+            ESP_LOGE(TAG, "Nullptr");
             break;
         case BMP2_E_COM_FAIL:
-            ESP_LOGE(tag, "Error [%d] : Communication failure error.", rslt);
-            ESP_LOGE(
-                tag, "It occurs due to read/write operation failure and also due to power failure during communication\r\n");
+            ESP_LOGE(TAG, "Communication failure");
             break;
         case BMP2_E_INVALID_LEN:
-            ESP_LOGE(tag, "Error [%d] : Invalid length error.", rslt);
-            ESP_LOGE(tag, "Occurs when length of data to be written is zero\n");
+            ESP_LOGE(TAG, "Zero message length");
             break;
         case BMP2_E_DEV_NOT_FOUND:
-            ESP_LOGE(tag, "Error [%d] : Device not found error. It occurs when the device chip id is incorrectly read\r\n",
-                     rslt);
+            ESP_LOGE(TAG, "Device not found");
             break;
         case BMP2_E_UNCOMP_TEMP_RANGE:
-            ESP_LOGE(tag, "Error [%d] : Uncompensated temperature data not in valid range error.", rslt);
+            ESP_LOGE(TAG, "Uncompensated temperature data not in valid range");
             break;
         case BMP2_E_UNCOMP_PRESS_RANGE:
-            ESP_LOGE(tag, "Error [%d] : Uncompensated pressure data not in valid range error.", rslt);
+            ESP_LOGE(TAG, "Uncompensated pressure data not in valid range");
             break;
         case BMP2_E_UNCOMP_TEMP_AND_PRESS_RANGE:
-            ESP_LOGE(
-                tag, "Error [%d] : Uncompensated pressure data and uncompensated temperature data are not in valid range error.",
-                rslt);
+            ESP_LOGE(TAG, "Uncompensated pressure data and uncompensated temperature data are not in valid range");
             break;
         default:
-            ESP_LOGE(tag, "Error [%d] : Unknown error code\r\n", rslt);
+            ESP_LOGE(TAG, "Unknown error code: %d", rslt);
             break;
         }
     }
@@ -118,14 +130,15 @@ void task_sensor(void *pvParameters)
 {
     ESP_LOGI(TAG, "Starting sensor task");
 
-    i2c_master_dev_handle_t deviceHandle{};
-    initI2C(deviceHandle);
-
     const SensorTaskInterface *sensorTaskInterface{static_cast<SensorTaskInterface *>(pvParameters)};
+
+    i2c_master_bus_handle_t i2cBusHandle{initMasterI2C()};
+    i2c_master_dev_handle_t i2cTempPressSensorHandle{initTempPressureI2CSlave(i2cBusHandle)};
+    i2c_master_dev_handle_t i2cIlluminanceSensorHandle(initIlluminanceI2CSlave(i2cBusHandle));
 
     bmp2_dev bmp280{};
     bmp280.intf = BMP2_I2C_INTF;
-    bmp280.intf_ptr = static_cast<void *>(&deviceHandle);
+    bmp280.intf_ptr = static_cast<void *>(&i2cTempPressSensorHandle);
     bmp280.read = bmp2_i2c_read;
     bmp280.write = bmp2_i2c_write;
     bmp280.delay_ms = bmp2_delay_ms;
