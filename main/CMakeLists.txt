@@ -2,13 +2,15 @@ idf_component_register(
     SRCS 
         "main.cpp"
 
-        "bh1750/bh1750_defs.hpp"
+        "bh1750/bh1750.cpp"
+        "bh1750/bh1750.hpp"
 
         "bmp280/bmp2_defs.h"
         "bmp280/bmp2.c"
         "bmp280/bmp2.h"
 
-        "sensor/sensor_task_interface.hpp"
+        "interfaces/interface_sensor.hpp"
+
         "sensor/task_sensor.cpp"
         "sensor/task_sensor.hpp"
 
@@ -25,6 +27,7 @@ idf_component_register(
         "."
         "bh1750"
         "bmp280"
+        "interfaces"
         "sensor"
         "st7735"
         "ui"

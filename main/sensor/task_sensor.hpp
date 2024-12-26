@@ -1,7 +1,7 @@
 #ifndef TASK_SENSOR_HPP_INCLUDED
 #define TASK_SENSOR_HPP_INCLUDED
 
-#include "sensor_task_interface.hpp"
+#include "interface_sensor.hpp"
 
 #include "driver/i2c_master.h"
 

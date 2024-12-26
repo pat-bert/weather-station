@@ -1,7 +1,7 @@
 #include "task_sensor.hpp"
 
 #include "bmp280/bmp2.h"
-#include "bh1750/bh1750_defs.hpp"
+#include "bh1750/bh1750.hpp"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -32,7 +32,7 @@ i2c_master_bus_handle_t initMasterI2C()
 
 i2c_master_dev_handle_t initTempPressureI2CSlave(const i2c_master_bus_handle_t busHandle)
 {
-    ESP_LOGI(TAG, "Adding T+P I2C sensor with address %#07x to bus", BMP2_I2C_ADDR_PRIM);
+    ESP_LOGI(TAG, "Adding T+P I2C sensor with address %#02x to bus", BMP2_I2C_ADDR_PRIM);
     i2c_device_config_t deviceConfig{};
     deviceConfig.scl_speed_hz = CONFIG_BMP_I2C_CLOCK_KHZ * 1000U;
     deviceConfig.device_address = BMP2_I2C_ADDR_PRIM;
@@ -46,10 +46,10 @@ i2c_master_dev_handle_t initTempPressureI2CSlave(const i2c_master_bus_handle_t b
 
 i2c_master_dev_handle_t initIlluminanceI2CSlave(const i2c_master_bus_handle_t busHandle)
 {
-    ESP_LOGI(TAG, "Adding illuminance I2C sensor with address %#07x to bus", BH1750_I2C_ADDR_PRIM);
+    ESP_LOGI(TAG, "Adding illuminance I2C sensor with address %#02x to bus", BH1750_I2C_ADDR_SEC);
     i2c_device_config_t deviceConfig{};
     deviceConfig.scl_speed_hz = CONFIG_BMP_I2C_CLOCK_KHZ * 1000U;
-    deviceConfig.device_address = BH1750_I2C_ADDR_PRIM;
+    deviceConfig.device_address = BH1750_I2C_ADDR_SEC;
     deviceConfig.dev_addr_length = I2C_ADDR_BIT_LEN_7;
 
     i2c_master_dev_handle_t deviceHandle{};
@@ -126,6 +126,25 @@ void bmp2_error_codes_print_result(int8_t rslt)
     }
 }
 
+int32_t bh1750_i2c_read(uint8_t *reg_data, int32_t length, void *intf_ptr)
+{
+    if (length == 0)
+    {
+        return 0;
+    }
+
+    const i2c_master_dev_handle_t *deviceHandle{static_cast<const i2c_master_dev_handle_t *>(intf_ptr)};
+    esp_err_t ret = i2c_master_receive(*deviceHandle, reg_data, length, pdMS_TO_TICKS(10000));
+    return ret;
+}
+
+int32_t bh1750_i2c_write(const uint8_t *reg_data, int32_t length, void *intf_ptr)
+{
+    const i2c_master_dev_handle_t *deviceHandle{static_cast<const i2c_master_dev_handle_t *>(intf_ptr)};
+    esp_err_t ret = i2c_master_transmit(*deviceHandle, reg_data, length, pdMS_TO_TICKS(10000));
+    return ret;
+}
+
 void task_sensor(void *pvParameters)
 {
     ESP_LOGI(TAG, "Starting sensor task");
@@ -135,6 +154,8 @@ void task_sensor(void *pvParameters)
     i2c_master_bus_handle_t i2cBusHandle{initMasterI2C()};
     i2c_master_dev_handle_t i2cTempPressSensorHandle{initTempPressureI2CSlave(i2cBusHandle)};
     i2c_master_dev_handle_t i2cIlluminanceSensorHandle(initIlluminanceI2CSlave(i2cBusHandle));
+
+    BH1750 bh1750{bh1750_i2c_read, bh1750_i2c_write, static_cast<void *>(&i2cIlluminanceSensorHandle)};
 
     bmp2_dev bmp280{};
     bmp280.intf = BMP2_I2C_INTF;
@@ -172,16 +193,27 @@ void task_sensor(void *pvParameters)
         ets_delay_us(meas_time_us);
 
         /* Read compensated data */
-        bmp2_data sensorData{};
-        rslt = bmp2_get_sensor_data(&sensorData, &bmp280);
+        bmp2_data measurementTempAndPressure{};
+        rslt = bmp2_get_sensor_data(&measurementTempAndPressure, &bmp280);
         bmp2_error_codes_print_result(rslt);
-        ESP_LOGI(TAG, "%.2f °C %.2f Pa", sensorData.temperature, sensorData.pressure);
+
+        SensorData sensorData{};
+        sensorData.m_temperature = measurementTempAndPressure.temperature;
+        sensorData.m_pressure = measurementTempAndPressure.pressure;
+
+        ESP_ERROR_CHECK(bh1750.powerOnMode(true));
+        ESP_ERROR_CHECK(bh1750.setMeasurementMode(BH1750::Resolution::medium, true));
+        vTaskDelay(pdMS_TO_TICKS(120U));
+        ESP_ERROR_CHECK(bh1750.readMeasurement(sensorData.m_illuminance));
+
+        ESP_LOGI(TAG, "%.2f °C %.2f hPa %u lx", sensorData.m_temperature, sensorData.m_pressure / 100.0, sensorData.m_illuminance);
 
         if (xQueueSend(sensorTaskInterface->m_measurementQueue_out, &sensorData, portMAX_DELAY) != pdPASS)
         {
             ESP_LOGE(TAG, "Failed to send measurement data to queue");
         }
 
+        ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
         vTaskDelay(pdMS_TO_TICKS(1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS));
     }
 }

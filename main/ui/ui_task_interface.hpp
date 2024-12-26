@@ -13,6 +13,7 @@ struct UiTaskInterface
     lv_meter_indicator_t *m_indic;
     lv_obj_t *m_temperatureBar;
     lv_obj_t *m_temperatureLabel;
+    lv_obj_t *m_illuminanceLabel;
     lv_obj_t *m_timeLabel;
 };
 
