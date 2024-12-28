@@ -15,6 +15,7 @@ struct UiTaskInterface
     lv_obj_t *m_illuminanceLabel;
     lv_obj_t *m_humidityLabel;
     lv_obj_t *m_timeLabel;
+    lv_obj_t *m_tabview;
 };
 
 #endif

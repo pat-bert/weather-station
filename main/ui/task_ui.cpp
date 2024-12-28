@@ -5,10 +5,13 @@
 #include "st7735/esp_lcd_panel_custom_vendor.h"
 
 #include "driver/spi_master.h"
+#include "driver/gpio.h"
+
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_pm.h"
 
 #include "lvgl.h"
 
@@ -20,6 +23,24 @@
 
 LV_IMG_DECLARE(sun);
 LV_IMG_DECLARE(drop);
+
+static void IRAM_ATTR tabButtonIsrCallback(void *arg)
+{
+    UiTaskInterface *uiTaskInterface = static_cast<UiTaskInterface *>(arg);
+
+    ButtonData buttonData{};
+    buttonData.m_tabviewButtonPressed = true;
+
+    QueueValueType queueData{buttonData};
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xQueueSendFromISR(uiTaskInterface->m_measurementQueue_in, &queueData, &xHigherPriorityTaskWoken);
+
+    if (xHigherPriorityTaskWoken)
+    {
+        portYIELD_FROM_ISR();
+    }
+}
 
 void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
 {
@@ -38,7 +59,30 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
     static lv_coord_t columnDescriptor[] = {temperatureContainerWidth, illuminanceContainerWidth, pressureContainerWidth, LV_GRID_TEMPLATE_LAST};
 
     lv_obj_t *scr = lv_scr_act();
-    lv_obj_t *grid = lv_obj_create(scr);
+
+    lv_obj_t *tabview = lv_tabview_create(scr, LV_DIR_NONE, 0);
+    lv_obj_set_align(tabview, LV_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(tabview, 0, 0);
+
+    uiTaskInterface->m_tabview = tabview;
+
+    lv_obj_t *tabviewContent = lv_tabview_get_content(tabview);
+    lv_obj_set_size(tabviewContent, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
+    lv_obj_set_style_pad_all(tabviewContent, 0, 0);
+    lv_obj_center(tabviewContent);
+
+    lv_obj_t *dashboard = lv_tabview_add_tab(tabview, "");
+    lv_obj_t *history = lv_tabview_add_tab(tabview, "");
+
+    lv_obj_set_size(dashboard, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
+    lv_obj_set_style_pad_all(dashboard, 0, 0);
+    lv_obj_center(dashboard);
+
+    lv_obj_set_size(history, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
+    lv_obj_set_style_pad_all(history, 0, 0);
+    lv_obj_center(history);
+
+    lv_obj_t *grid = lv_obj_create(dashboard);
     lv_obj_set_size(grid, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
     lv_obj_center(grid);
     lv_obj_set_layout(grid, LV_LAYOUT_GRID);
@@ -339,6 +383,16 @@ void task_lvgl(void *arg)
 
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
 
+    gpio_config_t ioConfig{};
+    ioConfig.pin_bit_mask = 1ULL << GPIO_NUM_33;
+    ioConfig.mode = GPIO_MODE_INPUT;
+    ioConfig.pull_up_en = GPIO_PULLUP_ENABLE;
+    ioConfig.intr_type = GPIO_INTR_NEGEDGE;
+    ESP_ERROR_CHECK(gpio_config(&ioConfig));
+    ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_EDGE));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_NUM_33, tabButtonIsrCallback, (void *)uiTaskInterface));
+    ESP_ERROR_CHECK(gpio_wakeup_enable(GPIO_NUM_33, GPIO_INTR_LOW_LEVEL));
+
     while (true)
     {
         task_delay_ms = lv_timer_handler();
@@ -354,8 +408,8 @@ void task_lvgl(void *arg)
 
         // Since no animations need to run frequently this task can wait for sensor data to update the UI
         // using xQueueReceive instead of yielding to a second task using vTaskDelay
-        SensorData sensorData{};
-        if (xQueueReceive(uiTaskInterface->m_measurementQueue_in, &sensorData, pdMS_TO_TICKS(task_delay_ms)) == pdPASS)
+        QueueValueType queueData{};
+        if (xQueueReceive(uiTaskInterface->m_measurementQueue_in, &queueData, pdMS_TO_TICKS(task_delay_ms)) == pdPASS)
         {
             // Get time
             std::time_t now{};
@@ -367,34 +421,49 @@ void task_lvgl(void *arg)
             char timeStringBuffer[std::size("Wednesday dd.mm.yyyy hh:mm")];
             std::strftime(timeStringBuffer, sizeof(timeStringBuffer), "%A %e.%m.%Y %H:%M", timeinfo);
 
-            ESP_LOGI(TAG, "%.2f °C %u %% %.2f hPa %u lx @ %s", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance, timeStringBuffer);
-
             // Update current date and time
             if ((timeinfo->tm_year > (1970 - 1900)) && (uiTaskInterface->m_timeLabel != nullptr))
             {
                 lv_label_set_text(uiTaskInterface->m_timeLabel, timeStringBuffer);
             }
 
-            // Update sensor readings
-            if (uiTaskInterface->m_temperatureLabel != nullptr)
+            if (std::holds_alternative<ButtonData>(queueData))
             {
-                lv_label_set_text_fmt(uiTaskInterface->m_temperatureLabel, "%.1f °C", sensorData.m_temperature);
+                ButtonData buttonData = std::get<ButtonData>(queueData);
+                if (buttonData.m_tabviewButtonPressed)
+                {
+                    uint16_t current_tab = lv_tabview_get_tab_act(uiTaskInterface->m_tabview);
+                    uint16_t next_tab = (current_tab + 1) % 2;
+                    lv_tabview_set_act(uiTaskInterface->m_tabview, next_tab, LV_ANIM_ON);
+                }
             }
-            if (uiTaskInterface->m_temperatureBar != nullptr)
+            else if (std::holds_alternative<SensorData>(queueData))
             {
-                lv_bar_set_value(uiTaskInterface->m_temperatureBar, sensorData.m_temperature * TEMPERATURE_SCALING_FACTOR, LV_ANIM_OFF);
-            }
-            if (uiTaskInterface->m_pressureMeter != nullptr)
-            {
-                lv_meter_set_indicator_end_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, sensorData.m_pressure / PRESSURE_SCALING_DIVISOR);
-            }
-            if (uiTaskInterface->m_illuminanceLabel != nullptr)
-            {
-                lv_label_set_text_fmt(uiTaskInterface->m_illuminanceLabel, "%u lx", sensorData.m_illuminance);
-            }
-            if (uiTaskInterface->m_humidityLabel != nullptr)
-            {
-                lv_label_set_text_fmt(uiTaskInterface->m_humidityLabel, "%u %%", sensorData.m_humidity);
+                SensorData sensorData = std::get<SensorData>(queueData);
+
+                ESP_LOGI(TAG, "%.2f °C %u %% %.2f hPa %u lx @ %s", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance, timeStringBuffer);
+
+                // Update sensor readings
+                if (uiTaskInterface->m_temperatureLabel != nullptr)
+                {
+                    lv_label_set_text_fmt(uiTaskInterface->m_temperatureLabel, "%.1f °C", sensorData.m_temperature);
+                }
+                if (uiTaskInterface->m_temperatureBar != nullptr)
+                {
+                    lv_bar_set_value(uiTaskInterface->m_temperatureBar, sensorData.m_temperature * TEMPERATURE_SCALING_FACTOR, LV_ANIM_OFF);
+                }
+                if (uiTaskInterface->m_pressureMeter != nullptr)
+                {
+                    lv_meter_set_indicator_end_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, sensorData.m_pressure / PRESSURE_SCALING_DIVISOR);
+                }
+                if (uiTaskInterface->m_illuminanceLabel != nullptr)
+                {
+                    lv_label_set_text_fmt(uiTaskInterface->m_illuminanceLabel, "%u lx", sensorData.m_illuminance);
+                }
+                if (uiTaskInterface->m_humidityLabel != nullptr)
+                {
+                    lv_label_set_text_fmt(uiTaskInterface->m_humidityLabel, "%u %%", sensorData.m_humidity);
+                }
             }
             ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
         }

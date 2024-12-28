@@ -207,9 +207,10 @@ void task_sensor(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(120U));
         ESP_ERROR_CHECK(bh1750.readMeasurement(sensorData.m_illuminance));
 
-        ESP_LOGI(TAG, "%.2f °C %% %.2f hPa %u lx", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance);
+        ESP_LOGI(TAG, "%.2f °C %u %% %.2f hPa %u lx", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance);
 
-        if (xQueueSend(sensorTaskInterface->m_measurementQueue_out, &sensorData, portMAX_DELAY) != pdPASS)
+        QueueValueType queueData{sensorData};
+        if (xQueueSend(sensorTaskInterface->m_measurementQueue_out, &queueData, portMAX_DELAY) != pdPASS)
         {
             ESP_LOGE(TAG, "Failed to send measurement data to queue");
         }

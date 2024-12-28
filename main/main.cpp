@@ -13,7 +13,7 @@
 
 // FreeRTOS
 #define STACK_SIZE_SENSOR_TASK (3000)
-#define LVGL_TASK_STACK_SIZE (2800)
+#define LVGL_TASK_STACK_SIZE (3000)
 
 extern "C" void app_main(void)
 {
@@ -38,7 +38,7 @@ extern "C" void app_main(void)
     esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
     esp_sntp_init();
 
-    QueueHandle_t measurementQueue{xQueueCreate(5, sizeof(SensorData))};
+    QueueHandle_t measurementQueue{xQueueCreate(5, sizeof(QueueValueType))};
     configASSERT(measurementQueue);
 
     TaskHandle_t xHandleSensor{nullptr};

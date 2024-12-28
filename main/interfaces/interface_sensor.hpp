@@ -5,6 +5,12 @@
 #include "freertos/queue.h"
 
 #include <stdint.h>
+#include <variant>
+
+struct ButtonData
+{
+    bool m_tabviewButtonPressed;
+};
 
 struct SensorData
 {
@@ -13,6 +19,8 @@ struct SensorData
     uint16_t m_illuminance;
     uint8_t m_humidity;
 };
+
+using QueueValueType = std::variant<SensorData, ButtonData>;
 
 struct SensorTaskInterface
 {
