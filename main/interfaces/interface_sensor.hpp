@@ -11,6 +11,7 @@ struct SensorData
     double m_pressure;
     double m_temperature;
     uint16_t m_illuminance;
+    uint8_t m_humidity;
 };
 
 struct SensorTaskInterface

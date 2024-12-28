@@ -18,12 +18,16 @@
 #include <ctime>
 #include <iterator>
 
+LV_IMG_DECLARE(sun);
+LV_IMG_DECLARE(drop);
+
 void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
 {
     constexpr lv_coord_t topRibbonHeight{15};
     constexpr lv_coord_t mainAreaHeight{CONFIG_LCD_V_RES - topRibbonHeight - 10};
     constexpr lv_coord_t temperatureContainerWidth{40};
-    constexpr lv_coord_t pressureContainerWidth{CONFIG_LCD_H_RES - temperatureContainerWidth - 10};
+    constexpr lv_coord_t illuminanceContainerWidth{24};
+    constexpr lv_coord_t pressureContainerWidth{CONFIG_LCD_H_RES - temperatureContainerWidth - illuminanceContainerWidth - 17};
 
     static lv_style_t styleLabel;
     lv_style_init(&styleLabel);
@@ -31,16 +35,15 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
 
     // Grid layout
     static lv_coord_t rowDescriptor[] = {topRibbonHeight, mainAreaHeight, LV_GRID_TEMPLATE_LAST};
-    static lv_coord_t columnDescriptor[] = {temperatureContainerWidth, pressureContainerWidth, LV_GRID_TEMPLATE_LAST};
+    static lv_coord_t columnDescriptor[] = {temperatureContainerWidth, illuminanceContainerWidth, pressureContainerWidth, LV_GRID_TEMPLATE_LAST};
 
-    lv_disp_t *disp = uiTaskInterface->m_disp;
-    lv_obj_t *scr = lv_disp_get_scr_act(disp);
+    lv_obj_t *scr = lv_scr_act();
     lv_obj_t *grid = lv_obj_create(scr);
-    lv_obj_set_style_grid_column_dsc_array(grid, columnDescriptor, 0);
-    lv_obj_set_style_grid_row_dsc_array(grid, rowDescriptor, 0);
     lv_obj_set_size(grid, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
     lv_obj_center(grid);
     lv_obj_set_layout(grid, LV_LAYOUT_GRID);
+    lv_obj_set_style_grid_column_dsc_array(grid, columnDescriptor, 0);
+    lv_obj_set_style_grid_row_dsc_array(grid, rowDescriptor, 0);
     lv_obj_set_style_pad_all(grid, 0, 0);
     lv_obj_set_style_border_width(grid, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(grid, 0, LV_PART_MAIN);
@@ -48,7 +51,7 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
     {
         // Top ribbon
         lv_obj_t *topRibbon = lv_obj_create(grid);
-        lv_obj_set_grid_cell(topRibbon, LV_GRID_ALIGN_START, 0, 2, LV_GRID_ALIGN_START, 0, 1);
+        lv_obj_set_grid_cell(topRibbon, LV_GRID_ALIGN_START, 0, 3, LV_GRID_ALIGN_START, 0, 1);
         lv_obj_set_align(topRibbon, LV_ALIGN_CENTER);
         lv_obj_set_size(topRibbon, CONFIG_LCD_H_RES, topRibbonHeight);
         lv_obj_set_style_pad_all(topRibbon, 0, LV_PART_MAIN);
@@ -75,8 +78,8 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_obj_set_style_border_width(temperatureContainer, 0, LV_PART_MAIN);
 
         // Temperature bar
-        constexpr lv_coord_t temperatureBarWidth{20};
-        constexpr lv_coord_t temperatureBarHeight{static_cast<lv_coord_t>(mainAreaHeight * 0.8F)};
+        constexpr lv_coord_t temperatureBarWidth{static_cast<lv_coord_t>(0.5F * temperatureContainerWidth)};
+        constexpr lv_coord_t temperatureBarHeight{static_cast<lv_coord_t>(0.8F * mainAreaHeight)};
 
         static lv_style_t styleIndic;
         lv_style_init(&styleIndic);
@@ -85,40 +88,77 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_style_set_bg_grad_color(&styleIndic, lv_palette_main(LV_PALETTE_BLUE));
         lv_style_set_bg_grad_dir(&styleIndic, LV_GRAD_DIR_VER);
 
-        lv_obj_t *temperatureBar = lv_bar_create(temperatureContainer);
-        lv_obj_add_style(temperatureBar, &styleIndic, LV_PART_INDICATOR);
-        lv_obj_set_size(temperatureBar, temperatureBarWidth, temperatureBarHeight);
-        lv_obj_set_align(temperatureBar, LV_ALIGN_TOP_MID);
-        lv_bar_set_range(temperatureBar, TEMPERATURE_SCALING_FACTOR * MIN_TEMPERATURE_C, TEMPERATURE_SCALING_FACTOR * MAX_TEMPERATURE_C);
-        lv_obj_set_style_pad_all(temperatureBar, 0, LV_PART_MAIN);
-        lv_obj_set_style_border_width(temperatureBar, 1, LV_PART_MAIN);
-        lv_obj_set_style_border_color(temperatureBar, lv_palette_main(LV_PALETTE_INDIGO), LV_PART_MAIN);
-        
         lv_obj_t *temperatureLabel = lv_label_create(temperatureContainer);
         lv_obj_add_style(temperatureLabel, &styleLabel, LV_PART_MAIN);
         // Align the label horizontally with the bar and position it 5 px above
         lv_label_set_text(temperatureLabel, "     °C");
-        lv_obj_align_to(temperatureLabel, temperatureBar, LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
+        lv_obj_set_style_text_align(temperatureLabel, LV_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_set_align(temperatureLabel, LV_ALIGN_BOTTOM_MID);
 
+        lv_obj_t *temperatureBar = lv_bar_create(temperatureContainer);
+        lv_obj_add_style(temperatureBar, &styleIndic, LV_PART_INDICATOR);
+        lv_obj_set_size(temperatureBar, temperatureBarWidth, temperatureBarHeight);
+        lv_bar_set_range(temperatureBar, TEMPERATURE_SCALING_FACTOR * MIN_TEMPERATURE_C, TEMPERATURE_SCALING_FACTOR * MAX_TEMPERATURE_C);
+        lv_obj_set_style_pad_all(temperatureBar, 0, LV_PART_MAIN);
+        lv_obj_set_style_border_width(temperatureBar, 1, LV_PART_MAIN);
+        lv_obj_set_style_border_color(temperatureBar, lv_palette_main(LV_PALETTE_INDIGO), LV_PART_MAIN);
+        lv_obj_align_to(temperatureBar, temperatureLabel, LV_ALIGN_OUT_TOP_MID, 0, -5);
+
+        // Register updating widgets
         uiTaskInterface->m_temperatureBar = temperatureBar;
         uiTaskInterface->m_temperatureLabel = temperatureLabel;
     }
 
     {
+        // Container
+        lv_obj_t *illuminanceContainer = lv_obj_create(grid);
+        lv_obj_set_grid_cell(illuminanceContainer, LV_GRID_ALIGN_START, 1, 1, LV_GRID_ALIGN_START, 1, 1);
+        lv_obj_set_align(illuminanceContainer, LV_ALIGN_CENTER);
+        lv_obj_set_style_pad_all(illuminanceContainer, 0, LV_PART_MAIN);
+        lv_obj_set_size(illuminanceContainer, illuminanceContainerWidth, mainAreaHeight);
+        lv_obj_set_style_border_width(illuminanceContainer, 0, LV_PART_MAIN);
+
+        // Illuminance
+        lv_obj_t *illumninanceIcon = lv_img_create(illuminanceContainer);
+        lv_img_set_src(illumninanceIcon, &sun);
+        lv_obj_set_align(illumninanceIcon, LV_ALIGN_TOP_MID);
+        lv_obj_set_style_bg_opa(illumninanceIcon, LV_OPA_TRANSP, LV_PART_MAIN);
+
+        lv_obj_t *illuminanceLabel = lv_label_create(illuminanceContainer);
+        lv_obj_add_style(illuminanceLabel, &styleLabel, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(illuminanceLabel, 0, LV_PART_MAIN);
+        lv_obj_align_to(illuminanceLabel, illumninanceIcon, LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
+
+        // Humidity
+        lv_obj_t *humidityLabel = lv_label_create(illuminanceContainer);
+        lv_obj_add_style(humidityLabel, &styleLabel, LV_PART_MAIN);
+        lv_obj_set_align(humidityLabel, LV_ALIGN_BOTTOM_MID);
+        lv_obj_set_style_pad_all(humidityLabel, 0, LV_PART_MAIN);
+
+        lv_obj_t *humidityIcon = lv_img_create(illuminanceContainer);
+        lv_img_set_src(humidityIcon, &drop);
+        lv_obj_set_style_bg_opa(humidityIcon, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_align_to(humidityIcon, humidityLabel, LV_ALIGN_OUT_TOP_MID, 0, -5);
+
+        // Register updating widgets
+        uiTaskInterface->m_illuminanceLabel = illuminanceLabel;
+        uiTaskInterface->m_humidityLabel = humidityLabel;
+    }
+
+    {
         // Pressure container
         lv_obj_t *pressureContainer = lv_obj_create(grid);
-        lv_obj_set_grid_cell(pressureContainer, LV_GRID_ALIGN_START, 1, 1, LV_GRID_ALIGN_START, 1, 1);
+        lv_obj_set_grid_cell(pressureContainer, LV_GRID_ALIGN_START, 2, 1, LV_GRID_ALIGN_START, 1, 1);
         lv_obj_set_align(pressureContainer, LV_ALIGN_CENTER);
         lv_obj_set_style_pad_all(pressureContainer, 0, LV_PART_MAIN);
         lv_obj_set_size(pressureContainer, pressureContainerWidth, mainAreaHeight);
         lv_obj_set_style_border_width(pressureContainer, 0, LV_PART_MAIN);
 
-        constexpr lv_coord_t pressureMeterWidth{pressureContainerWidth};
-        constexpr lv_coord_t pressureMeterHeight{mainAreaHeight};
+        constexpr lv_coord_t pressureMeterWidth{std::min(pressureContainerWidth, mainAreaHeight)};
 
         // Pressure Meter
         lv_obj_t *pressureMeter = lv_meter_create(pressureContainer);
-        lv_obj_set_size(pressureMeter, pressureMeterWidth, pressureMeterHeight);
+        lv_obj_set_size(pressureMeter, pressureMeterWidth, pressureMeterWidth);
         lv_obj_set_align(pressureMeter, LV_ALIGN_CENTER);
         lv_obj_add_style(pressureMeter, &styleLabel, LV_PART_TICKS);
         lv_obj_set_style_pad_all(pressureMeter, 0, LV_PART_MAIN);
@@ -128,12 +168,16 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_meter_scale_t *scale = lv_meter_add_scale(pressureMeter);
 
         constexpr uint16_t tickCount{((MAX_PRESSURE_HPA - MIN_PRESSURE_HPA) / PRESSURE_TICKS_HPA) + 1};
-        constexpr uint16_t lineWidthMinor{2U};
-        constexpr uint16_t lineLengthMinor{5U};
         constexpr uint16_t nthMajor{4U};
-        constexpr uint16_t lineWidthMajor{4U};
-        constexpr uint16_t lineLengthMajor{10U};
-        constexpr int16_t labelGap{10};
+
+        constexpr uint16_t arcWidth{2U};
+        constexpr uint16_t lineLengthMinor{4U};
+        constexpr uint16_t lineLengthMajor{6U};
+
+        constexpr uint16_t lineWidthMinor{2U};
+        constexpr uint16_t lineWidthMajor{3U};
+
+        constexpr int16_t labelGap{8};
         constexpr uint32_t angleRange{270};
         constexpr uint32_t rotation{135};
 
@@ -141,8 +185,27 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_meter_set_scale_major_ticks(pressureMeter, scale, nthMajor, lineWidthMajor, lineLengthMajor, lv_color_black(), labelGap);
         lv_meter_set_scale_range(pressureMeter, scale, MIN_PRESSURE_HPA, MAX_PRESSURE_HPA, angleRange, rotation);
 
+        lv_meter_indicator_t *rainyArc = lv_meter_add_arc(pressureMeter, scale, arcWidth, lv_palette_main(LV_PALETTE_BLUE), 0);
+        lv_meter_indicator_t *changingArc = lv_meter_add_arc(pressureMeter, scale, arcWidth, lv_palette_main(LV_PALETTE_GREY), 0);
+        lv_meter_indicator_t *fairArc = lv_meter_add_arc(pressureMeter, scale, arcWidth, lv_palette_main(LV_PALETTE_YELLOW), 0);
+
+        lv_meter_set_indicator_start_value(pressureMeter, rainyArc, MIN_PRESSURE_HPA);
+        lv_meter_set_indicator_end_value(pressureMeter, rainyArc, PRESSURE_THRESHOLD_CHANGING);
+        lv_meter_set_indicator_start_value(pressureMeter, changingArc, PRESSURE_THRESHOLD_CHANGING);
+        lv_meter_set_indicator_end_value(pressureMeter, changingArc, PRESSURE_THRESHOLD_FAIR);
+        lv_meter_set_indicator_start_value(pressureMeter, fairArc, PRESSURE_THRESHOLD_FAIR);
+        lv_meter_set_indicator_end_value(pressureMeter, fairArc, MAX_PRESSURE_HPA);
+
+        lv_obj_t *unitLabel = lv_label_create(pressureMeter);
+        lv_label_set_text(unitLabel, "hPa");
+        lv_obj_set_style_text_align(unitLabel, LV_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_align_to(unitLabel, pressureMeter, LV_ALIGN_CENTER, 0, 0.33 * pressureMeterWidth);
+        lv_obj_add_style(unitLabel, &styleLabel, LV_PART_MAIN);
+
         // Add a needle line indicator
-        uiTaskInterface->m_indic = lv_meter_add_needle_line(pressureMeter, scale, 4, lv_palette_main(LV_PALETTE_RED), -10);
+        lv_meter_indicator_t *needle = lv_meter_add_needle_line(pressureMeter, scale, 3, lv_palette_main(LV_PALETTE_RED), -5);
+
+        uiTaskInterface->m_indic = needle;
         uiTaskInterface->m_pressureMeter = pressureMeter;
     }
 }
@@ -272,7 +335,6 @@ void task_lvgl(void *arg)
     ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000));
 
     UiTaskInterface *uiTaskInterface{static_cast<UiTaskInterface *>(arg)};
-    uiTaskInterface->m_disp = disp;
     lvgl_create_ui(uiTaskInterface);
 
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
@@ -305,7 +367,7 @@ void task_lvgl(void *arg)
             char timeStringBuffer[std::size("Wednesday dd.mm.yyyy hh:mm")];
             std::strftime(timeStringBuffer, sizeof(timeStringBuffer), "%A %e.%m.%Y %H:%M", timeinfo);
 
-            ESP_LOGI(TAG, "%.2f °C %.2f hPa %u lx @ %s", sensorData.m_temperature, sensorData.m_pressure / 100.0, sensorData.m_illuminance, timeStringBuffer);
+            ESP_LOGI(TAG, "%.2f °C %u %% %.2f hPa %u lx @ %s", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance, timeStringBuffer);
 
             // Update current date and time
             if ((timeinfo->tm_year > (1970 - 1900)) && (uiTaskInterface->m_timeLabel != nullptr))
@@ -329,6 +391,10 @@ void task_lvgl(void *arg)
             if (uiTaskInterface->m_illuminanceLabel != nullptr)
             {
                 lv_label_set_text_fmt(uiTaskInterface->m_illuminanceLabel, "%u lx", sensorData.m_illuminance);
+            }
+            if (uiTaskInterface->m_humidityLabel != nullptr)
+            {
+                lv_label_set_text_fmt(uiTaskInterface->m_humidityLabel, "%u %%", sensorData.m_humidity);
             }
             ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
         }

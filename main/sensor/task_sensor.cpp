@@ -200,13 +200,14 @@ void task_sensor(void *pvParameters)
         SensorData sensorData{};
         sensorData.m_temperature = measurementTempAndPressure.temperature;
         sensorData.m_pressure = measurementTempAndPressure.pressure;
+        sensorData.m_humidity = 0U;
 
         ESP_ERROR_CHECK(bh1750.powerOnMode(true));
         ESP_ERROR_CHECK(bh1750.setMeasurementMode(BH1750::Resolution::medium, true));
         vTaskDelay(pdMS_TO_TICKS(120U));
         ESP_ERROR_CHECK(bh1750.readMeasurement(sensorData.m_illuminance));
 
-        ESP_LOGI(TAG, "%.2f °C %.2f hPa %u lx", sensorData.m_temperature, sensorData.m_pressure / 100.0, sensorData.m_illuminance);
+        ESP_LOGI(TAG, "%.2f °C %% %.2f hPa %u lx", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance);
 
         if (xQueueSend(sensorTaskInterface->m_measurementQueue_out, &sensorData, portMAX_DELAY) != pdPASS)
         {

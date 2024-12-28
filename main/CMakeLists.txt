@@ -17,9 +17,11 @@ idf_component_register(
         "st7735/esp_lcd_panel_st7735.c"
         "st7735/esp_lcd_panel_custom_vendor.h"
 
-        "ui/ui_task_interface.hpp"
+        "ui/drop.c"
+        "ui/sun.c"
         "ui/task_ui.cpp"
         "ui/task_ui.hpp"
+        "ui/ui_task_interface.hpp"
 
         "wifi/wifi_client.cpp"
         "wifi/wifi_client.hpp"

@@ -13,7 +13,6 @@
 
 // FreeRTOS
 #define STACK_SIZE_SENSOR_TASK (3000)
-#define LVGL_TASK_PRIORITY 2
 #define LVGL_TASK_STACK_SIZE (2800)
 
 extern "C" void app_main(void)
@@ -44,13 +43,13 @@ extern "C" void app_main(void)
 
     TaskHandle_t xHandleSensor{nullptr};
     SensorTaskInterface sensorTaskInterface{measurementQueue};
-    xTaskCreate(task_sensor, "sensor", STACK_SIZE_SENSOR_TASK, static_cast<void *>(&sensorTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSensor);
+    xTaskCreatePinnedToCore(task_sensor, "sensor", STACK_SIZE_SENSOR_TASK, static_cast<void *>(&sensorTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSensor, 0);
     configASSERT(xHandleSensor);
 
     UiTaskInterface uiTaskInterface{};
     uiTaskInterface.m_measurementQueue_in = sensorTaskInterface.m_measurementQueue_out;
     TaskHandle_t xHandleDisplay{nullptr};
-    xTaskCreate(task_lvgl, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), LVGL_TASK_PRIORITY, &xHandleDisplay);
+    xTaskCreatePinnedToCore(task_lvgl, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleDisplay, 1);
     configASSERT(xHandleDisplay);
 
     esp_pm_config_t pm_config{};
