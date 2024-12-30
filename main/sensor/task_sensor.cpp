@@ -5,6 +5,7 @@
 
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_pm.h"
 
 #include "rom/ets_sys.h"
 
@@ -142,11 +143,11 @@ int32_t bh1750_i2c_write(const uint8_t *reg_data, int32_t length, void *intf_ptr
     return ret;
 }
 
-void task_sensor(void *pvParameters)
+void task_sensor(void *arg)
 {
     ESP_LOGI(TAG, "Starting sensor task");
 
-    const SensorTaskInterface *sensorTaskInterface{static_cast<SensorTaskInterface *>(pvParameters)};
+    const SensorTaskInterface *sensorTaskInterface{static_cast<SensorTaskInterface *>(arg)};
 
     i2c_master_bus_handle_t i2cBusHandle{initMasterI2C()};
     i2c_master_dev_handle_t i2cTempPressSensorHandle{initTempPressureI2CSlave(i2cBusHandle)};
@@ -180,8 +181,15 @@ void task_sensor(void *pvParameters)
     rslt = bme280_set_sensor_settings(BME280_SEL_ALL_SETTINGS, &settings, &bme280);
     bme280_error_codes_print_result(rslt);
 
+    constexpr BH1750::Resolution illuminanceResolution{BH1750::Resolution::medium};
+    const uint32_t illuminanceMeasurementTimeMs{bh1750.getMeasurementTimeMs(illuminanceResolution)};
+
     while (true)
     {
+        ESP_ERROR_CHECK(bh1750.powerOnMode(true));
+        ESP_ERROR_CHECK(bh1750.setMeasurementMode(illuminanceResolution, true));
+        int64_t illuminanceStartTimeUs{esp_timer_get_time()};
+
         /* Set forced power mode */
         rslt = bme280_set_sensor_mode(BME280_POWERMODE_FORCED, &bme280);
         bme280_error_codes_print_result(rslt);
@@ -202,9 +210,15 @@ void task_sensor(void *pvParameters)
         sensorData.m_pressure = measurement.pressure;
         sensorData.m_humidity = measurement.humidity;
 
-        ESP_ERROR_CHECK(bh1750.powerOnMode(true));
-        ESP_ERROR_CHECK(bh1750.setMeasurementMode(BH1750::Resolution::medium, true));
-        vTaskDelay(pdMS_TO_TICKS(120U));
+        int64_t illuminanceEndTimeUs{esp_timer_get_time()};
+        int64_t illuminancePassedTimeMs{(illuminanceEndTimeUs - illuminanceStartTimeUs) / 1000};
+        ESP_LOGI(TAG, "%" PRId64 "ms since starting illuminance measurement", illuminancePassedTimeMs);
+        if (illuminancePassedTimeMs < illuminanceMeasurementTimeMs)
+        {
+            ESP_LOGI(TAG, "Waiting for %" PRId64 "ms", illuminanceMeasurementTimeMs - illuminancePassedTimeMs);
+            vTaskDelay(pdMS_TO_TICKS(illuminanceMeasurementTimeMs - illuminancePassedTimeMs));
+        }
+
         ESP_ERROR_CHECK(bh1750.readMeasurement(sensorData.m_illuminance));
 
         ESP_LOGI(TAG, "%.2f °C %.0f%% %.2f hPa %u lx", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance);
@@ -216,6 +230,7 @@ void task_sensor(void *pvParameters)
         }
 
         ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
+        esp_pm_dump_locks(stdout);
         vTaskDelay(pdMS_TO_TICKS(1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS));
     }
 }

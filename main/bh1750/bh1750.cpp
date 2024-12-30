@@ -18,6 +18,16 @@ int32_t BH1750::setMeasurementMode(const Resolution resolution, const bool isOne
     return writeCommand(measurementCommand);
 }
 
+uint32_t BH1750::getMeasurementTimeMs(const Resolution resolution)
+{
+    if (resolution == Resolution::low)
+    {
+        return 16U;
+    }
+
+    return 120U;
+}
+
 int32_t BH1750::resetMeasurement() const
 {
     return writeCommand(BH1750_RESET);

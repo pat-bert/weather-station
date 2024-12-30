@@ -43,6 +43,8 @@ public:
 
     int32_t setMeasurementMode(const Resolution resolution, const bool isOneTime) const;
 
+    static uint32_t getMeasurementTimeMs(const Resolution resolution);
+
     int32_t resetMeasurement() const;
     int32_t readMeasurement(uint16_t &illuminance) const;
 
