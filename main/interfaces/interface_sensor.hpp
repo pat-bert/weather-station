@@ -16,8 +16,8 @@ struct SensorData
 {
     double m_pressure;
     double m_temperature;
+    double m_humidity;
     uint16_t m_illuminance;
-    uint8_t m_humidity;
 };
 
 using QueueValueType = std::variant<SensorData, ButtonData>;

@@ -5,9 +5,9 @@ idf_component_register(
         "bh1750/bh1750.cpp"
         "bh1750/bh1750.hpp"
 
-        "bmp280/bmp2_defs.h"
-        "bmp280/bmp2.c"
-        "bmp280/bmp2.h"
+        "bme280/bme280_defs.h"
+        "bme280/bme280.c"
+        "bme280/bme280.h"
 
         "interfaces/interface_sensor.hpp"
 
@@ -28,7 +28,7 @@ idf_component_register(
     INCLUDE_DIRS 
         "."
         "bh1750"
-        "bmp280"
+        "bme280"
         "interfaces"
         "sensor"
         "st7735"

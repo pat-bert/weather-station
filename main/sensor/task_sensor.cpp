@@ -1,6 +1,6 @@
 #include "task_sensor.hpp"
 
-#include "bmp280/bmp2.h"
+#include "bme280/bme280.h"
 #include "bh1750/bh1750.hpp"
 
 #include "esp_log.h"
@@ -32,10 +32,10 @@ i2c_master_bus_handle_t initMasterI2C()
 
 i2c_master_dev_handle_t initTempPressureI2CSlave(const i2c_master_bus_handle_t busHandle)
 {
-    ESP_LOGI(TAG, "Adding T+P I2C sensor with address %#02x to bus", BMP2_I2C_ADDR_PRIM);
+    ESP_LOGI(TAG, "Adding T+P I2C sensor with address %#02x to bus", BME280_I2C_ADDR_PRIM);
     i2c_device_config_t deviceConfig{};
     deviceConfig.scl_speed_hz = CONFIG_BMP_I2C_CLOCK_KHZ * 1000U;
-    deviceConfig.device_address = BMP2_I2C_ADDR_PRIM;
+    deviceConfig.device_address = BME280_I2C_ADDR_PRIM;
     deviceConfig.dev_addr_length = I2C_ADDR_BIT_LEN_7;
 
     i2c_master_dev_handle_t deviceHandle{};
@@ -58,66 +58,63 @@ i2c_master_dev_handle_t initIlluminanceI2CSlave(const i2c_master_bus_handle_t bu
     return deviceHandle;
 }
 
-BMP2_INTF_RET_TYPE bmp2_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t length, const void *intf_ptr)
+BME280_INTF_RET_TYPE bme280_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t length, void *intf_ptr)
 {
     if ((length == 0) || (length > static_cast<uint32_t>(INT32_MAX)))
     {
-        return BMP2_INTF_RET_SUCCESS;
+        return BME280_INTF_RET_SUCCESS;
     }
 
     const i2c_master_dev_handle_t *deviceHandle{static_cast<const i2c_master_dev_handle_t *>(intf_ptr)};
     esp_err_t ret = i2c_master_transmit_receive(*deviceHandle, &reg_addr, 1, reg_data, static_cast<int32_t>(length), pdMS_TO_TICKS(10000));
-    return (ESP_OK == ret) ? BMP2_INTF_RET_SUCCESS : -1;
+    return (ESP_OK == ret) ? BME280_INTF_RET_SUCCESS : -1;
 }
 
-BMP2_INTF_RET_TYPE bmp2_i2c_write(uint8_t reg_addr, const uint8_t *reg_data, uint32_t length, const void *intf_ptr)
+BME280_INTF_RET_TYPE bme280_i2c_write(uint8_t reg_addr, const uint8_t *reg_data, uint32_t length, void *intf_ptr)
 {
-    if ((length > static_cast<uint32_t>(INT32_MAX)) || (length > BMP2_MAX_LEN))
+    if ((length > static_cast<uint32_t>(INT32_MAX)) || (length > BME280_MAX_LEN))
     {
         return -1;
     }
 
-    uint8_t writeBuffer[BMP2_MAX_LEN + 1];
+    uint8_t writeBuffer[BME280_MAX_LEN + 1];
     writeBuffer[0] = reg_addr;
     std::memcpy(writeBuffer + 1, reg_data, length);
 
     const i2c_master_dev_handle_t *deviceHandle{static_cast<const i2c_master_dev_handle_t *>(intf_ptr)};
     esp_err_t ret = i2c_master_transmit(*deviceHandle, writeBuffer, static_cast<int32_t>(length + 1), pdMS_TO_TICKS(10000));
-    return (ESP_OK == ret) ? BMP2_INTF_RET_SUCCESS : -1;
+    return (ESP_OK == ret) ? BME280_INTF_RET_SUCCESS : -1;
 }
 
-void bmp2_delay_ms(uint32_t period, void *intf_ptr)
+void bme280_delay_ms(uint32_t period, void *intf_ptr)
 {
     (void)intf_ptr;
     vTaskDelay(pdMS_TO_TICKS(period));
 }
 
-void bmp2_error_codes_print_result(int8_t rslt)
+void bme280_error_codes_print_result(int8_t rslt)
 {
-    if (rslt != BMP2_OK)
+    if (rslt != BME280_OK)
     {
         switch (rslt)
         {
-        case BMP2_E_NULL_PTR:
+        case BME280_E_NULL_PTR:
             ESP_LOGE(TAG, "Nullptr");
             break;
-        case BMP2_E_COM_FAIL:
+        case BME280_E_COMM_FAIL:
             ESP_LOGE(TAG, "Communication failure");
             break;
-        case BMP2_E_INVALID_LEN:
+        case BME280_E_INVALID_LEN:
             ESP_LOGE(TAG, "Zero message length");
             break;
-        case BMP2_E_DEV_NOT_FOUND:
+        case BME280_E_DEV_NOT_FOUND:
             ESP_LOGE(TAG, "Device not found");
             break;
-        case BMP2_E_UNCOMP_TEMP_RANGE:
-            ESP_LOGE(TAG, "Uncompensated temperature data not in valid range");
+        case BME280_E_SLEEP_MODE_FAIL:
+            ESP_LOGE(TAG, "Sleep mode failed");
             break;
-        case BMP2_E_UNCOMP_PRESS_RANGE:
-            ESP_LOGE(TAG, "Uncompensated pressure data not in valid range");
-            break;
-        case BMP2_E_UNCOMP_TEMP_AND_PRESS_RANGE:
-            ESP_LOGE(TAG, "Uncompensated pressure data and uncompensated temperature data are not in valid range");
+        case BME280_E_NVM_COPY_FAILED:
+            ESP_LOGE(TAG, "Nvm copy failed");
             break;
         default:
             ESP_LOGE(TAG, "Unknown error code: %d", rslt);
@@ -157,57 +154,60 @@ void task_sensor(void *pvParameters)
 
     BH1750 bh1750{bh1750_i2c_read, bh1750_i2c_write, static_cast<void *>(&i2cIlluminanceSensorHandle)};
 
-    bmp2_dev bmp280{};
-    bmp280.intf = BMP2_I2C_INTF;
-    bmp280.intf_ptr = static_cast<void *>(&i2cTempPressSensorHandle);
-    bmp280.read = bmp2_i2c_read;
-    bmp280.write = bmp2_i2c_write;
-    bmp280.delay_ms = bmp2_delay_ms;
+    bme280_dev bme280{};
+    bme280.intf = BME280_I2C_INTF;
+    bme280.intf_ptr = static_cast<void *>(&i2cTempPressSensorHandle);
+    bme280.read = bme280_i2c_read;
+    bme280.write = bme280_i2c_write;
+    bme280.delay_ms = bme280_delay_ms;
 
-    int8_t rslt = bmp2_init(&bmp280);
-    bmp2_error_codes_print_result(rslt);
+    int8_t rslt = bme280_init(&bme280);
+    bme280_error_codes_print_result(rslt);
 
     /* Always read the current settings before writing, especially when all the configuration is not modified */
-    bmp2_config conf{};
-    rslt = bmp2_get_config(&conf, &bmp280);
-    bmp2_error_codes_print_result(rslt);
+    bme280_settings settings{};
+    rslt = bme280_get_sensor_settings(&settings, &bme280);
+    bme280_error_codes_print_result(rslt);
 
     /* Configuring the over-sampling mode, filter coefficient and output data rate */
     /* Overwrite the desired settings */
-    conf.filter = BMP2_FILTER_OFF;
-    conf.os_mode = BMP2_OS_MODE_ULTRA_LOW_POWER;
+    settings.filter = BME280_FILTER_COEFF_OFF;
+    settings.osr_h = BME280_OVERSAMPLING_1X;
+    settings.osr_t = BME280_OVERSAMPLING_1X;
+    settings.osr_p = BME280_OVERSAMPLING_1X;
+    settings.standby_time = BME280_STANDBY_TIME_0_5_MS;
 
-    rslt = bmp2_set_config(&conf, &bmp280);
-    bmp2_error_codes_print_result(rslt);
+    rslt = bme280_set_sensor_settings(BME280_SEL_ALL_SETTINGS, &settings, &bme280);
+    bme280_error_codes_print_result(rslt);
 
     while (true)
     {
         /* Set forced power mode */
-        rslt = bmp2_set_power_mode(BMP2_POWERMODE_FORCED, &conf, &bmp280);
-        bmp2_error_codes_print_result(rslt);
+        rslt = bme280_set_sensor_mode(BME280_POWERMODE_FORCED, &bme280);
+        bme280_error_codes_print_result(rslt);
 
         /* Calculate measurement time in microseconds */
         uint32_t meas_time_us;
-        rslt = bmp2_compute_meas_time(&meas_time_us, &conf, &bmp280);
-        bmp2_error_codes_print_result(rslt);
+        rslt = bme280_cal_meas_delay(&meas_time_us, &settings);
+        bme280_error_codes_print_result(rslt);
         ets_delay_us(meas_time_us);
 
         /* Read compensated data */
-        bmp2_data measurementTempAndPressure{};
-        rslt = bmp2_get_sensor_data(&measurementTempAndPressure, &bmp280);
-        bmp2_error_codes_print_result(rslt);
+        bme280_data measurement{};
+        rslt = bme280_get_sensor_data(BME280_ALL, &measurement, &bme280);
+        bme280_error_codes_print_result(rslt);
 
         SensorData sensorData{};
-        sensorData.m_temperature = measurementTempAndPressure.temperature;
-        sensorData.m_pressure = measurementTempAndPressure.pressure;
-        sensorData.m_humidity = 0U;
+        sensorData.m_temperature = measurement.temperature;
+        sensorData.m_pressure = measurement.pressure;
+        sensorData.m_humidity = measurement.humidity;
 
         ESP_ERROR_CHECK(bh1750.powerOnMode(true));
         ESP_ERROR_CHECK(bh1750.setMeasurementMode(BH1750::Resolution::medium, true));
         vTaskDelay(pdMS_TO_TICKS(120U));
         ESP_ERROR_CHECK(bh1750.readMeasurement(sensorData.m_illuminance));
 
-        ESP_LOGI(TAG, "%.2f °C %u %% %.2f hPa %u lx", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance);
+        ESP_LOGI(TAG, "%.2f °C %.0f%% %.2f hPa %u lx", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance);
 
         QueueValueType queueData{sensorData};
         if (xQueueSend(sensorTaskInterface->m_measurementQueue_out, &queueData, portMAX_DELAY) != pdPASS)

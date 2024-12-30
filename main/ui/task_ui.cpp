@@ -441,7 +441,7 @@ void task_lvgl(void *arg)
             {
                 SensorData sensorData = std::get<SensorData>(queueData);
 
-                ESP_LOGI(TAG, "%.2f °C %u %% %.2f hPa %u lx @ %s", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance, timeStringBuffer);
+                ESP_LOGI(TAG, "%.2f °C %.0f%% %.2f hPa %u lx @ %s", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance, timeStringBuffer);
 
                 // Update sensor readings
                 if (uiTaskInterface->m_temperatureLabel != nullptr)
@@ -462,7 +462,7 @@ void task_lvgl(void *arg)
                 }
                 if (uiTaskInterface->m_humidityLabel != nullptr)
                 {
-                    lv_label_set_text_fmt(uiTaskInterface->m_humidityLabel, "%u %%", sensorData.m_humidity);
+                    lv_label_set_text_fmt(uiTaskInterface->m_humidityLabel, "%.0f%%", sensorData.m_humidity);
                 }
             }
             ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
