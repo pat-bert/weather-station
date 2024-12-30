@@ -90,7 +90,7 @@ static void wifi_event_cb(void *arg, esp_event_base_t event_base, int32_t event_
     case (WIFI_EVENT_STA_DISCONNECTED):
     {
         ESP_LOGI(TAG, "Wi-Fi disconnected");
-        if (eventArguments->m_wifi_retry_count < eventArguments->m_wifi_retry_attempts)
+        if (eventArguments->m_allowReconnection && (eventArguments->m_wifi_retry_count < eventArguments->m_wifi_retry_attempts))
         {
             ESP_LOGI(TAG, "Retrying to connect to Wi-Fi network...");
             esp_wifi_connect();
@@ -98,7 +98,6 @@ static void wifi_event_cb(void *arg, esp_event_base_t event_base, int32_t event_
         }
         else
         {
-            ESP_LOGI(TAG, "Failed to connect to Wi-Fi network");
             xEventGroupSetBits(eventArguments->m_wifi_event_group, WIFI_FAIL_BIT);
         }
         break;
@@ -180,13 +179,15 @@ esp_err_t WifiClient::connect(const char *wifi_ssid, const char *wifi_password)
     strncpy((char *)wifi_config.sta.ssid, wifi_ssid, sizeof(wifi_config.sta.ssid));
     strncpy((char *)wifi_config.sta.password, wifi_password, sizeof(wifi_config.sta.password));
 
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MAX_MODEM));     // default is WIFI_PS_MIN_MODEM
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));     // default is WIFI_PS_MIN_MODEM
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM)); // default is WIFI_STORAGE_FLASH
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
 
     ESP_LOGI(TAG, "Connecting to Wi-Fi network: %s", wifi_config.sta.ssid);
+    m_event_state.m_allowReconnection = true;
+    m_event_state.m_wifi_retry_count = 0;
     ESP_ERROR_CHECK(esp_wifi_start());
 
     EventBits_t bits = xEventGroupWaitBits(m_event_state.m_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
@@ -209,6 +210,7 @@ esp_err_t WifiClient::connect(const char *wifi_ssid, const char *wifi_password)
 
 esp_err_t WifiClient::disconnect(void)
 {
+    m_event_state.m_allowReconnection = false;
     return esp_wifi_disconnect();
 }
 

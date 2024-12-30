@@ -23,6 +23,7 @@ struct EventState
     EventGroupHandle_t m_wifi_event_group;
     int m_wifi_retry_attempts;
     int m_wifi_retry_count;
+    bool m_allowReconnection{true};
 };
 
 class WifiClient
