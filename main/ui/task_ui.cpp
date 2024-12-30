@@ -11,7 +11,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "esp_pm.h"
+#include "esp_freertos_hooks.h"
 
 #include "lvgl.h"
 
@@ -272,12 +272,6 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
     esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
 }
 
-static void increase_lvgl_tick(void *arg)
-{
-    /* Tell LVGL how many milliseconds has elapsed */
-    lv_tick_inc(LVGL_TICK_PERIOD_MS);
-}
-
 void initSPI()
 {
     spi_bus_config_t buscfg{};
@@ -329,6 +323,11 @@ esp_lcd_panel_handle_t initPanel(lv_disp_drv_t *disp_drv)
     return panel_handle;
 }
 
+void increase_lvgl_tick(void)
+{
+    lv_tick_inc(1000.0 / CONFIG_FREERTOS_HZ);
+}
+
 void task_lvgl(void *arg)
 {
     const char TAG[] = "lvgl";
@@ -350,6 +349,7 @@ void task_lvgl(void *arg)
 
     ESP_LOGI(TAG, "Initialize LVGL library");
     lv_init();
+    ESP_ERROR_CHECK(esp_register_freertos_tick_hook_for_cpu(increase_lvgl_tick, xPortGetCoreID()));
     // alloc draw buffers used by LVGL
     // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
     lv_color_t *buf1 = (lv_color_t *)heap_caps_malloc(LVGL_BUFFER_ELEMENTS * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
@@ -367,16 +367,6 @@ void task_lvgl(void *arg)
     disp_drv.draw_buf = &disp_buf;
     disp_drv.user_data = panel_handle;
     lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
-
-    ESP_LOGI(TAG, "Install LVGL tick timer");
-    // Tick interface for LVGL (using esp_timer to generate 2ms periodic event)
-    esp_timer_create_args_t lvgl_tick_timer_args{};
-    lvgl_tick_timer_args.callback = &increase_lvgl_tick;
-    lvgl_tick_timer_args.name = "lvgl_tick";
-
-    esp_timer_handle_t lvgl_tick_timer = NULL;
-    ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
-    ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000));
 
     UiTaskInterface *uiTaskInterface{static_cast<UiTaskInterface *>(arg)};
     lvgl_create_ui(uiTaskInterface);
