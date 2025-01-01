@@ -16,6 +16,9 @@ struct UiTaskInterface
     lv_obj_t *m_humidityLabel;
     lv_obj_t *m_timeLabel;
     lv_obj_t *m_tabview;
+    lv_obj_t *m_temperatureAndHumidityChart;
+    lv_chart_series_t *m_temperatureSeries;
+    lv_chart_series_t *m_humiditySeries;
 };
 
 #endif

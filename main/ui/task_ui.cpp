@@ -24,6 +24,10 @@
 LV_IMG_DECLARE(sun);
 LV_IMG_DECLARE(drop);
 
+constexpr uint16_t numberOfSensorReadingsSaved{24};
+constexpr uint8_t hoursTickDivider{6};
+constexpr uint16_t numberMajorTicksHoursHistory{numberOfSensorReadingsSaved / hoursTickDivider + 1};
+
 static void IRAM_ATTR tabButtonIsrCallback(void *arg)
 {
     UiTaskInterface *uiTaskInterface = static_cast<UiTaskInterface *>(arg);
@@ -39,6 +43,32 @@ static void IRAM_ATTR tabButtonIsrCallback(void *arg)
     if (xHigherPriorityTaskWoken)
     {
         portYIELD_FROM_ISR();
+    }
+}
+
+static void draw_chart_horizontal_time_labels_callback(lv_event_t *e)
+{
+    lv_obj_draw_part_dsc_t *dsc = lv_event_get_draw_part_dsc(e);
+    if (!lv_obj_draw_part_check_type(dsc, &lv_chart_class, LV_CHART_DRAW_PART_TICK_LABEL))
+        return;
+
+    if (dsc->id == LV_CHART_AXIS_PRIMARY_X && dsc->text)
+    {
+        const int32_t tickIndexBackwards{(numberMajorTicksHoursHistory - 1) - dsc->value};
+        const int32_t hoursAgo{tickIndexBackwards * hoursTickDivider};
+
+        lv_snprintf(dsc->text, dsc->text_length, "-%" PRId32 "h", hoursAgo);
+    }
+    else if (dsc->id == LV_CHART_AXIS_PRIMARY_Y)
+    {
+        dsc->line_dsc->color = lv_palette_main(LV_PALETTE_RED);
+    }
+    else if (dsc->id == LV_CHART_AXIS_SECONDARY_Y)
+    {
+        dsc->line_dsc->color = lv_palette_main(LV_PALETTE_BLUE);
+    }
+    else
+    {
     }
 }
 
@@ -72,15 +102,9 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
     lv_obj_center(tabviewContent);
 
     lv_obj_t *dashboard = lv_tabview_add_tab(tabview, "");
-    lv_obj_t *history = lv_tabview_add_tab(tabview, "");
-
     lv_obj_set_size(dashboard, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
     lv_obj_set_style_pad_all(dashboard, 0, 0);
     lv_obj_center(dashboard);
-
-    lv_obj_set_size(history, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
-    lv_obj_set_style_pad_all(history, 0, 0);
-    lv_obj_center(history);
 
     lv_obj_t *grid = lv_obj_create(dashboard);
     lv_obj_set_size(grid, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
@@ -252,6 +276,76 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         uiTaskInterface->m_indic = needle;
         uiTaskInterface->m_pressureMeter = pressureMeter;
     }
+
+    lv_obj_t *history = lv_tabview_add_tab(tabview, "");
+    lv_obj_set_size(history, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
+    lv_obj_set_style_pad_all(history, 0, 0);
+    lv_obj_center(history);
+
+    {
+        constexpr lv_coord_t labelPaddingTemperature{30};
+        constexpr lv_coord_t labelPaddingHumidity{30};
+        constexpr lv_coord_t labelPaddingTime{25};
+        constexpr lv_coord_t titlePadding{15};
+        constexpr lv_coord_t chartHeight{CONFIG_LCD_V_RES - labelPaddingTime - titlePadding};
+        constexpr lv_coord_t chartWidth{CONFIG_LCD_H_RES - labelPaddingTemperature - labelPaddingHumidity};
+
+        lv_obj_t *title = lv_label_create(history);
+        lv_obj_set_align(title, LV_ALIGN_TOP_MID);
+        lv_obj_set_style_pad_all(title, 0, LV_PART_MAIN);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_8, LV_PART_MAIN);
+        lv_label_set_text(title, "Zeitverlauf");
+
+        lv_obj_t *temperatureAxis = lv_label_create(history);
+        lv_obj_set_align(temperatureAxis, LV_ALIGN_TOP_LEFT);
+        lv_obj_set_style_pad_all(temperatureAxis, 0, LV_PART_MAIN);
+        lv_obj_set_style_text_font(temperatureAxis, &lv_font_montserrat_8, LV_PART_MAIN);
+        lv_label_set_text(temperatureAxis, "°C");
+
+        lv_obj_t *humidityAxis = lv_label_create(history);
+        lv_obj_set_align(humidityAxis, LV_ALIGN_TOP_RIGHT);
+        lv_obj_set_style_pad_all(humidityAxis, 0, LV_PART_MAIN);
+        lv_obj_set_style_text_font(humidityAxis, &lv_font_montserrat_8, LV_PART_MAIN);
+        lv_label_set_text(humidityAxis, "%");
+
+        lv_obj_t *chart = lv_chart_create(history);
+        lv_obj_set_size(chart, chartWidth, chartHeight);
+        lv_obj_set_style_pad_all(chart, 0, LV_PART_MAIN);
+        lv_obj_set_style_text_font(chart, &lv_font_montserrat_8, LV_PART_TICKS);
+        lv_obj_align(chart, LV_ALIGN_TOP_LEFT, labelPaddingTemperature, titlePadding);
+        lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
+        lv_chart_set_update_mode(chart, LV_CHART_UPDATE_MODE_SHIFT);
+        lv_chart_set_point_count(chart, numberOfSensorReadingsSaved);
+        lv_obj_add_event_cb(chart, draw_chart_horizontal_time_labels_callback, LV_EVENT_DRAW_PART_BEGIN, nullptr);
+
+        // Data point size
+        lv_obj_set_style_size(chart, 2, LV_PART_INDICATOR);
+
+        // Vertical range
+        lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, MIN_TEMPERATURE_C, MAX_TEMPERATURE_C);
+
+        constexpr lv_coord_t minimumHumidity{0};
+        constexpr lv_coord_t maximumHumidity{100};
+        lv_chart_set_range(chart, LV_CHART_AXIS_SECONDARY_Y, minimumHumidity, maximumHumidity);
+
+        // Axis ticks
+        lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_Y, 10, 5, ((MAX_TEMPERATURE_C - MIN_TEMPERATURE_C) / 2) + 1, 2, true, labelPaddingTemperature);
+        lv_chart_set_axis_tick(chart, LV_CHART_AXIS_SECONDARY_Y, 10, 5, 6, 2, true, labelPaddingHumidity);
+        lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_X, 10, 5, numberMajorTicksHoursHistory, hoursTickDivider, true, labelPaddingTime);
+
+        // Division lines
+        lv_chart_set_div_line_count(chart, 6, numberMajorTicksHoursHistory);
+
+        lv_chart_series_t *temperatureSeries = lv_chart_add_series(chart, lv_palette_main(LV_PALETTE_RED), LV_CHART_AXIS_PRIMARY_Y);
+        lv_chart_series_t *humiditySeries = lv_chart_add_series(chart, lv_palette_main(LV_PALETTE_BLUE), LV_CHART_AXIS_SECONDARY_Y);
+
+        lv_chart_set_x_start_point(chart, temperatureSeries, numberOfSensorReadingsSaved - 1);
+        lv_chart_set_x_start_point(chart, humiditySeries, numberOfSensorReadingsSaved - 1);
+
+        uiTaskInterface->m_temperatureAndHumidityChart = chart;
+        uiTaskInterface->m_temperatureSeries = temperatureSeries;
+        uiTaskInterface->m_humiditySeries = humiditySeries;
+    }
 }
 
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
@@ -383,6 +477,8 @@ void task_lvgl(void *arg)
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_NUM_33, tabButtonIsrCallback, (void *)uiTaskInterface));
     ESP_ERROR_CHECK(gpio_wakeup_enable(GPIO_NUM_33, GPIO_INTR_LOW_LEVEL));
 
+    lv_tabview_set_act(uiTaskInterface->m_tabview, 1, LV_ANIM_OFF);
+
     while (true)
     {
         task_delay_ms = lv_timer_handler();
@@ -409,7 +505,7 @@ void task_lvgl(void *arg)
             timeinfo = std::localtime(&now);
 
             char timeStringBuffer[std::size("Wednesday dd.mm.yyyy hh:mm")];
-            std::strftime(timeStringBuffer, sizeof(timeStringBuffer), "%A %e.%m.%Y %H:%M", timeinfo);
+            std::strftime(timeStringBuffer, sizeof(timeStringBuffer), "%A %d.%m.%Y %H:%M", timeinfo);
 
             // Update current date and time
             if ((timeinfo->tm_year > (1970 - 1900)) && (uiTaskInterface->m_timeLabel != nullptr))
@@ -442,7 +538,7 @@ void task_lvgl(void *arg)
                 {
                     lv_bar_set_value(uiTaskInterface->m_temperatureBar, sensorData.m_temperature * TEMPERATURE_SCALING_FACTOR, LV_ANIM_OFF);
                 }
-                if (uiTaskInterface->m_pressureMeter != nullptr)
+                if ((uiTaskInterface->m_pressureMeter != nullptr) && (uiTaskInterface->m_indic))
                 {
                     lv_meter_set_indicator_end_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, sensorData.m_pressure / PRESSURE_SCALING_DIVISOR);
                 }
@@ -453,6 +549,18 @@ void task_lvgl(void *arg)
                 if (uiTaskInterface->m_humidityLabel != nullptr)
                 {
                     lv_label_set_text_fmt(uiTaskInterface->m_humidityLabel, "%.0f%%", sensorData.m_humidity);
+                }
+                if (uiTaskInterface->m_temperatureAndHumidityChart != nullptr)
+                {
+                    if (uiTaskInterface->m_temperatureSeries != nullptr)
+                    {
+                        lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, sensorData.m_temperature);
+                    }
+
+                    if (uiTaskInterface->m_humiditySeries != nullptr)
+                    {
+                        lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_humiditySeries, sensorData.m_humidity);
+                    }
                 }
             }
             ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
