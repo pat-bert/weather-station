@@ -223,12 +223,13 @@ esp_err_t WifiClient::deinit(void)
         return ret;
     }
 
+    ESP_ERROR_CHECK(esp_event_handler_instance_unregister(IP_EVENT, ESP_EVENT_ANY_ID, m_ip_event_handler));
+    ESP_ERROR_CHECK(esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, m_wifi_event_handler));
+    ESP_ERROR_CHECK(esp_event_loop_delete_default());
+
     ESP_ERROR_CHECK(esp_wifi_deinit());
     ESP_ERROR_CHECK(esp_wifi_clear_default_wifi_driver_and_handlers(m_netif));
     esp_netif_destroy(m_netif);
-
-    ESP_ERROR_CHECK(esp_event_handler_instance_unregister(IP_EVENT, ESP_EVENT_ANY_ID, m_ip_event_handler));
-    ESP_ERROR_CHECK(esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, m_wifi_event_handler));
 
     return ESP_OK;
 }

@@ -47,6 +47,8 @@ void task_sntp(void *arg)
         ESP_ERROR_CHECK(wifiClient.deinit());
 
         ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
-        vTaskDelay(pdMS_TO_TICKS(CONFIG_SNTP_INTERVAL_HOURS * 60 * 60 * 1000));
+
+        // The intermediate value becomes too large when 1000 is inside the macro
+        vTaskDelay(pdMS_TO_TICKS(CONFIG_SNTP_INTERVAL_HOURS * 60 * 60) * 1000);
     }
 }
