@@ -23,6 +23,8 @@ idf_component_register(
         "ui/task_ui.hpp"
         "ui/ui_task_interface.hpp"
 
+        "wifi/task_sntp.cpp"
+        "wifi/task_sntp.hpp"
         "wifi/wifi_client.cpp"
         "wifi/wifi_client.hpp"
     INCLUDE_DIRS 
