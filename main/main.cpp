@@ -36,13 +36,13 @@ extern "C" void app_main(void)
 
     TaskHandle_t xHandleSensor{nullptr};
     SensorTaskInterface sensorTaskInterface{measurementQueue};
-    xTaskCreatePinnedToCore(task_sensor, "sensor", STACK_SIZE_SENSOR_TASK, static_cast<void *>(&sensorTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSensor, 0);
+    xTaskCreate(task_sensor, "sensor", STACK_SIZE_SENSOR_TASK, static_cast<void *>(&sensorTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSensor);
     configASSERT(xHandleSensor);
 
     UiTaskInterface uiTaskInterface{};
     uiTaskInterface.m_measurementQueue_in = sensorTaskInterface.m_measurementQueue_out;
     TaskHandle_t xHandleDisplay{nullptr};
-    xTaskCreatePinnedToCore(task_lvgl, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleDisplay, 1);
+    xTaskCreate(task_lvgl, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleDisplay);
     configASSERT(xHandleDisplay);
 
     vTaskSuspend(nullptr);
