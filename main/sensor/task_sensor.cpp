@@ -195,7 +195,7 @@ void task_sensor(void *arg)
         bme280_error_codes_print_result(rslt);
 
         /* Calculate measurement time in microseconds */
-        uint32_t meas_time_us;
+        uint32_t meas_time_us{0U};
         rslt = bme280_cal_meas_delay(&meas_time_us, &settings);
         bme280_error_codes_print_result(rslt);
         ets_delay_us(meas_time_us);
