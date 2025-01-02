@@ -103,6 +103,47 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
     lv_obj_set_style_pad_all(tabviewContent, 0, 0);
     lv_obj_center(tabviewContent);
 
+    lv_obj_t *wifiProvisioningTab = lv_tabview_add_tab(tabview, "");
+    lv_obj_set_size(wifiProvisioningTab, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
+    lv_obj_set_style_pad_all(wifiProvisioningTab, 0, 0);
+    lv_obj_center(wifiProvisioningTab);
+
+    {
+        {
+            lv_obj_t *onboardingLabel = lv_label_create(wifiProvisioningTab);
+            lv_obj_add_style(onboardingLabel, &styleLabel, LV_PART_MAIN);
+            lv_label_set_long_mode(onboardingLabel, LV_LABEL_LONG_WRAP);
+            lv_label_set_text_static(onboardingLabel, "Willkommen bei der ESP32 Wetterstation!");
+            lv_obj_set_width(onboardingLabel, lv_pct(80));
+            lv_obj_align(onboardingLabel, LV_ALIGN_TOP_MID, 0, 5);
+            lv_obj_set_style_text_align(onboardingLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        }
+
+        lv_color_t bgColor = lv_color_hex(0xFFFFFFFF);
+        lv_color_t fgColor = lv_color_hex(0x00000000);
+        lv_coord_t qrCodeSize{static_cast<lv_coord_t>(0.5 * std::min(CONFIG_LCD_H_RES, CONFIG_LCD_V_RES))};
+
+        {
+            lv_obj_t *instructionLabel = lv_label_create(wifiProvisioningTab);
+            lv_label_set_text_static(instructionLabel, "1. App \"ESP SoftAP Provisioning\" herunterladen\n2. QR Code in der App scannen");
+            lv_obj_set_width(instructionLabel, lv_pct(50));
+            lv_obj_set_align(instructionLabel, LV_ALIGN_LEFT_MID);
+            lv_obj_set_style_pad_left(instructionLabel, 2, LV_PART_MAIN);
+            lv_label_set_long_mode(instructionLabel, LV_LABEL_LONG_WRAP);
+            lv_obj_add_style(instructionLabel, &styleLabel, LV_PART_MAIN);
+        }
+
+        {
+            lv_obj_t *provisioningQR = lv_qrcode_create(wifiProvisioningTab, qrCodeSize, bgColor, fgColor);
+            lv_obj_set_align(provisioningQR, LV_ALIGN_RIGHT_MID);
+            lv_obj_add_flag(provisioningQR, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_pad_right(provisioningQR, 2, LV_PART_MAIN);
+            lv_obj_set_style_border_color(provisioningQR, bgColor, 0);
+            lv_obj_set_style_border_width(provisioningQR, 5, 0);
+            uiTaskInterface->m_provisioningQrCode = provisioningQR;
+        }
+    }
+
     lv_obj_t *dashboardTab = lv_tabview_add_tab(tabview, "");
     lv_obj_set_size(dashboardTab, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
     lv_obj_set_style_pad_all(dashboardTab, 0, 0);
@@ -348,48 +389,6 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         uiTaskInterface->m_temperatureSeries = temperatureSeries;
         uiTaskInterface->m_humiditySeries = humiditySeries;
     }
-
-    lv_obj_t *wifiProvisioningTab = lv_tabview_add_tab(tabview, "");
-    lv_obj_set_size(wifiProvisioningTab, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
-    lv_obj_set_style_pad_all(wifiProvisioningTab, 0, 0);
-    lv_obj_center(wifiProvisioningTab);
-
-    {
-        {
-            lv_obj_t *onboardingLabel = lv_label_create(wifiProvisioningTab);
-            lv_obj_add_style(onboardingLabel, &styleLabel, LV_PART_MAIN);
-            lv_label_set_long_mode(onboardingLabel, LV_LABEL_LONG_WRAP);
-            lv_label_set_text_static(onboardingLabel, "Willkommen bei der ESP32 Wetterstation!");
-            lv_obj_set_width(onboardingLabel, lv_pct(80));
-            lv_obj_align(onboardingLabel, LV_ALIGN_TOP_MID, 0, 5);
-            lv_obj_set_style_text_align(onboardingLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-        }
-
-        lv_color_t bgColor = lv_color_hex(0xFFFFFFFF);
-        lv_color_t fgColor = lv_color_hex(0x00000000);
-        lv_coord_t qrCodeSize{static_cast<lv_coord_t>(0.5 * std::min(CONFIG_LCD_H_RES, CONFIG_LCD_V_RES))};
-
-        const char *provisioningInfo = "https://lvgl.io";
-
-        {
-            lv_obj_t *instructionLabel = lv_label_create(wifiProvisioningTab);
-            lv_label_set_text_static(instructionLabel, "1. App \"ESP SoftAP Provisioning\" herunterladen\n2. QR Code in der App scannen");
-            lv_obj_set_width(instructionLabel, lv_pct(50));
-            lv_obj_set_align(instructionLabel, LV_ALIGN_LEFT_MID);
-            lv_obj_set_style_pad_left(instructionLabel, 2, LV_PART_MAIN);
-            lv_label_set_long_mode(instructionLabel, LV_LABEL_LONG_WRAP);
-            lv_obj_add_style(instructionLabel, &styleLabel, LV_PART_MAIN);
-        }
-
-        {
-            lv_obj_t *provisioningQR = lv_qrcode_create(wifiProvisioningTab, qrCodeSize, bgColor, fgColor);
-            lv_obj_set_align(provisioningQR, LV_ALIGN_RIGHT_MID);
-            lv_obj_set_style_pad_right(provisioningQR, 2, LV_PART_MAIN);
-            lv_qrcode_update(provisioningQR, provisioningInfo, strlen(provisioningInfo));
-            lv_obj_set_style_border_color(provisioningQR, bgColor, 0);
-            lv_obj_set_style_border_width(provisioningQR, 5, 0);
-        }
-    }
 }
 
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
@@ -461,7 +460,7 @@ esp_lcd_panel_handle_t initPanel(lv_disp_drv_t *disp_drv)
     return panel_handle;
 }
 
-void increase_lvgl_tick(void)
+void IRAM_ATTR increase_lvgl_tick(void)
 {
     lv_tick_inc(1000.0 / CONFIG_FREERTOS_HZ);
 }
@@ -481,9 +480,6 @@ void task_lvgl(void *arg)
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, false));
     ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, true));
-
-    // user can flush pre-defined pattern to the screen before we turn on the screen or backlight
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
     ESP_LOGI(TAG, "Initialize LVGL library");
     lv_init();
@@ -508,6 +504,8 @@ void task_lvgl(void *arg)
 
     UiTaskInterface *uiTaskInterface{static_cast<UiTaskInterface *>(arg)};
     lvgl_create_ui(uiTaskInterface);
+    // user can flush pre-defined pattern to the screen before we turn on the screen or backlight
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
 
@@ -520,8 +518,6 @@ void task_lvgl(void *arg)
     ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_EDGE));
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_NUM_33, tabButtonIsrCallback, (void *)uiTaskInterface));
     ESP_ERROR_CHECK(gpio_wakeup_enable(GPIO_NUM_33, GPIO_INTR_LOW_LEVEL));
-
-    lv_tabview_set_act(uiTaskInterface->m_tabview, 2, LV_ANIM_OFF);
 
     while (true)
     {
@@ -559,7 +555,7 @@ void task_lvgl(void *arg)
 
             if (std::holds_alternative<ButtonData>(queueData))
             {
-                ButtonData buttonData = std::get<ButtonData>(queueData);
+                ButtonData &buttonData = std::get<ButtonData>(queueData);
                 if (buttonData.m_tabviewButtonPressed)
                 {
                     uint16_t current_tab = lv_tabview_get_tab_act(uiTaskInterface->m_tabview);
@@ -567,9 +563,16 @@ void task_lvgl(void *arg)
                     lv_tabview_set_act(uiTaskInterface->m_tabview, next_tab, LV_ANIM_ON);
                 }
             }
+            else if (std::holds_alternative<WifiData>(queueData))
+            {
+                WifiData &wifiData = std::get<WifiData>(queueData);
+
+                lv_qrcode_update(uiTaskInterface->m_provisioningQrCode, wifiData.m_provisioningPayload, strlen(wifiData.m_provisioningPayload));
+                lv_obj_clear_flag(uiTaskInterface->m_provisioningQrCode, LV_OBJ_FLAG_HIDDEN);
+            }
             else if (std::holds_alternative<SensorData>(queueData))
             {
-                SensorData sensorData = std::get<SensorData>(queueData);
+                SensorData &sensorData = std::get<SensorData>(queueData);
 
                 ESP_LOGI(TAG, "%.2f °C %.0f%% %.2f hPa %u lx @ %s", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance, timeStringBuffer);
 

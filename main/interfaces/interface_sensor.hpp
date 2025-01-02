@@ -7,6 +7,11 @@
 #include <stdint.h>
 #include <variant>
 
+struct WifiData
+{
+    char m_provisioningPayload[150];
+};
+
 struct ButtonData
 {
     bool m_tabviewButtonPressed;
@@ -20,7 +25,7 @@ struct SensorData
     uint16_t m_illuminance;
 };
 
-using QueueValueType = std::variant<SensorData, ButtonData>;
+using QueueValueType = std::variant<SensorData, ButtonData, WifiData>;
 
 struct SensorTaskInterface
 {

@@ -17,9 +17,9 @@ i2c_master_bus_handle_t initMasterI2C()
 {
     ESP_LOGI(TAG, "Creating I2C Master Bus");
     i2c_master_bus_config_t busConfig{};
-    busConfig.i2c_port = CONFIG_BMP_I2C_PORT;
-    busConfig.sda_io_num = static_cast<gpio_num_t>(CONFIG_BMP_SDA_GPIO);
-    busConfig.scl_io_num = static_cast<gpio_num_t>(CONFIG_BMP_SCL_GPIO);
+    busConfig.i2c_port = CONFIG_I2C_PORT;
+    busConfig.sda_io_num = static_cast<gpio_num_t>(CONFIG_SDA_GPIO);
+    busConfig.scl_io_num = static_cast<gpio_num_t>(CONFIG_SCL_GPIO);
     busConfig.clk_source = I2C_CLK_SRC_DEFAULT;
     busConfig.glitch_ignore_cnt = 7;
     busConfig.intr_priority = 0;
@@ -35,7 +35,7 @@ i2c_master_dev_handle_t initTempPressureI2CSlave(const i2c_master_bus_handle_t b
 {
     ESP_LOGI(TAG, "Adding T+P I2C sensor with address %#02x to bus", BME280_I2C_ADDR_PRIM);
     i2c_device_config_t deviceConfig{};
-    deviceConfig.scl_speed_hz = CONFIG_BMP_I2C_CLOCK_KHZ * 1000U;
+    deviceConfig.scl_speed_hz = CONFIG_BME_I2C_CLOCK_KHZ * 1000U;
     deviceConfig.device_address = BME280_I2C_ADDR_PRIM;
     deviceConfig.dev_addr_length = I2C_ADDR_BIT_LEN_7;
 
@@ -49,7 +49,7 @@ i2c_master_dev_handle_t initIlluminanceI2CSlave(const i2c_master_bus_handle_t bu
 {
     ESP_LOGI(TAG, "Adding illuminance I2C sensor with address %#02x to bus", BH1750_I2C_ADDR_SEC);
     i2c_device_config_t deviceConfig{};
-    deviceConfig.scl_speed_hz = CONFIG_BMP_I2C_CLOCK_KHZ * 1000U;
+    deviceConfig.scl_speed_hz = CONFIG_BH1750_I2C_CLOCK_KHZ * 1000U;
     deviceConfig.device_address = BH1750_I2C_ADDR_SEC;
     deviceConfig.dev_addr_length = I2C_ADDR_BIT_LEN_7;
 
@@ -212,10 +212,8 @@ void task_sensor(void *arg)
 
         int64_t illuminanceEndTimeUs{esp_timer_get_time()};
         int64_t illuminancePassedTimeMs{(illuminanceEndTimeUs - illuminanceStartTimeUs) / 1000};
-        ESP_LOGI(TAG, "%" PRId64 "ms since starting illuminance measurement", illuminancePassedTimeMs);
         if (illuminancePassedTimeMs < illuminanceMeasurementTimeMs)
         {
-            ESP_LOGI(TAG, "Waiting for %" PRId64 "ms", illuminanceMeasurementTimeMs - illuminancePassedTimeMs);
             vTaskDelay(pdMS_TO_TICKS(illuminanceMeasurementTimeMs - illuminancePassedTimeMs));
         }
 
@@ -230,7 +228,6 @@ void task_sensor(void *arg)
         }
 
         ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
-        esp_pm_dump_locks(stdout);
         vTaskDelay(pdMS_TO_TICKS(1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS));
     }
 }

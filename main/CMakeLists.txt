@@ -28,6 +28,7 @@ idf_component_register(
         "wifi/task_sntp.hpp"
         "wifi/wifi_client.cpp"
         "wifi/wifi_client.hpp"
+        "wifi/wifi_task_interface.hpp"
     INCLUDE_DIRS 
         "."
         "bh1750"

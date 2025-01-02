@@ -5,6 +5,7 @@
 #include "sensor/task_sensor.hpp"
 #include "ui/task_ui.hpp"
 #include "wifi/task_sntp.hpp"
+#include "wifi/wifi_task_interface.hpp"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -13,6 +14,7 @@
 // FreeRTOS
 #define STACK_SIZE_SENSOR_TASK (3000)
 #define LVGL_TASK_STACK_SIZE (3000)
+#define SNTP_TASK_STACK_SIZE (4000)
 
 extern "C" void app_main(void)
 {
@@ -27,10 +29,6 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_MODEM, ESP_PD_OPTION_ON));
     ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_MODEM, ESP_PD_OPTION_OFF));
 
-    TaskHandle_t xHandleSntp{nullptr};
-    xTaskCreate(task_sntp, "sntp", 3000, nullptr, tskIDLE_PRIORITY + 1, &xHandleSntp);
-    configASSERT(xHandleSntp);
-
     QueueHandle_t measurementQueue{xQueueCreate(5, sizeof(QueueValueType))};
     configASSERT(measurementQueue);
 
@@ -44,6 +42,11 @@ extern "C" void app_main(void)
     TaskHandle_t xHandleDisplay{nullptr};
     xTaskCreate(task_lvgl, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleDisplay);
     configASSERT(xHandleDisplay);
+
+    WifiTaskInterface wifiTaskInterface{measurementQueue};
+    TaskHandle_t xHandleSntp{nullptr};
+    xTaskCreate(task_sntp, "sntp", SNTP_TASK_STACK_SIZE, static_cast<void *>(&wifiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSntp);
+    configASSERT(xHandleSntp);
 
     vTaskSuspend(nullptr);
 }

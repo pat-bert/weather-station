@@ -19,6 +19,7 @@ struct UiTaskInterface
     lv_obj_t *m_temperatureAndHumidityChart;
     lv_chart_series_t *m_temperatureSeries;
     lv_chart_series_t *m_humiditySeries;
+    lv_obj_t *m_provisioningQrCode;
 };
 
 #endif

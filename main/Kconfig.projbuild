@@ -1,0 +1,134 @@
+menu "User Configuration"
+
+orsource "$IDF_PATH/examples/common_components/env_caps/$IDF_TARGET/Kconfig.env_caps"
+
+menu "Display"
+    config LCD_H_RES
+        int "Horizontal display resolution"
+        default 160
+
+    config LCD_V_RES
+        int "Vertical display resolution"
+        default 128
+
+    config LCD_CLOCK_MHZ
+        int "LCD SPI clock frequency (Hz)"
+        range 1 80
+        default 60
+        help 
+            Datasheet specifies 66 ns -> 15 MHz, stops working @80 MHz which is maximum of ESP32 via IO_MUX Pins
+
+    config LCD_SCLK_GPIO
+        int "LCD SPI Clock GPIO number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
+        default 18
+        help
+            GPIO number (IOxx) for clock line towards LCD
+
+    config LCD_MOSI_GPIO
+        int "LCD SPI Master Out Slave In GPIO number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
+        default 23
+        help
+            GPIO number (IOxx) for data line towards LCD
+
+    config LCD_CS_GPIO
+        int "LCD SPI Chip Select GPIO number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
+        default 5
+        help
+            GPIO number (IOxx) to select LCD as slave
+
+    config LCD_RST_GPIO
+        int "LCD Reset GPIO number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
+        default 27
+        help
+            GPIO number (IOxx) to reset LCD
+
+    config LCD_DC_GPIO
+        int "LCD Data/Command Select GPIO number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
+        default 26
+        help
+            GPIO number (IOxx) to select writing data or commands to the LCD
+
+    config LCD_SPI_HOST
+        int "LCD SPI host number"
+        range 0 2
+        default 2
+        help
+            SPI host number to be used for LCD communication
+            0: SPI_HOST    SPI1_HOST
+            1: HSPI_HOST   SPI2_HOST
+            2: VSPI_HOST   SPI3_HOST
+
+endmenu
+
+menu "Sensors"
+    config MEASUREMENT_INTERVAL_SECONDS
+        int "Sensor measurement interval (seconds)"
+        default 10    
+
+    config SDA_GPIO
+        int "Sensor I2C data GPIO number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
+        default 21
+        help
+            GPIO number (IOxx) for exchanging data via I2C with sensor
+
+    config SCL_GPIO
+        int "Sensor I2C clock GPIO number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
+        default 22
+        help
+            GPIO number (IOxx) for the I2C clock signal for the sensor
+            
+    config I2C_PORT
+        int "Sensor I2C port number"
+        range 0 1
+        default 0
+        help 
+            Number of the I2C peripheral to use for the sensor
+
+menu "BME280"
+    config BME_I2C_CLOCK_KHZ
+        int "Sensor I2C clock frequency (kHz)"
+        range 10 400
+        default 100
+        help
+            I2C clock frequency used to communicate with the sensor
+
+endmenu
+
+menu "BH1750"
+    config BH1750_I2C_CLOCK_KHZ
+        int "Sensor I2C clock frequency (kHz)"
+        range 10 400
+        default 100
+        help
+            I2C clock frequency used to communicate with the sensor
+
+endmenu
+
+endmenu
+
+menu "Time"    
+    config TIMEZONE
+        string "Timezone string in Unix TZ environment variable format, including daylight saving information"
+        default "CET-1CEST,M3.5.0,M10.5.0/3"
+
+    config SNTP_INTERVAL_HOURS
+        int "Network time protocol time sync interval (hours)"
+        default 1     
+        help
+            Time in hours after which the internal real-time-clock is synced via SNTP again
+            
+    config SNTP_SERVER_URL
+        string "NTP server URL"
+        default "pool.ntp.org"
+        help
+            Server address from which to retrieve the update
+endmenu
+
+endmenu
