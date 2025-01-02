@@ -21,6 +21,8 @@
 #include <ctime>
 #include <iterator>
 
+LV_FONT_DECLARE(lv_font_montserrat_8_german)
+
 LV_IMG_DECLARE(sun);
 LV_IMG_DECLARE(drop);
 
@@ -82,7 +84,7 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
 
     static lv_style_t styleLabel;
     lv_style_init(&styleLabel);
-    lv_style_set_text_font(&styleLabel, &lv_font_montserrat_8);
+    lv_style_set_text_font(&styleLabel, &lv_font_montserrat_8_german);
 
     // Grid layout
     static lv_coord_t rowDescriptor[] = {topRibbonHeight, mainAreaHeight, LV_GRID_TEMPLATE_LAST};
@@ -101,12 +103,12 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
     lv_obj_set_style_pad_all(tabviewContent, 0, 0);
     lv_obj_center(tabviewContent);
 
-    lv_obj_t *dashboard = lv_tabview_add_tab(tabview, "");
-    lv_obj_set_size(dashboard, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
-    lv_obj_set_style_pad_all(dashboard, 0, 0);
-    lv_obj_center(dashboard);
+    lv_obj_t *dashboardTab = lv_tabview_add_tab(tabview, "");
+    lv_obj_set_size(dashboardTab, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
+    lv_obj_set_style_pad_all(dashboardTab, 0, 0);
+    lv_obj_center(dashboardTab);
 
-    lv_obj_t *grid = lv_obj_create(dashboard);
+    lv_obj_t *grid = lv_obj_create(dashboardTab);
     lv_obj_set_size(grid, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
     lv_obj_center(grid);
     lv_obj_set_layout(grid, LV_LAYOUT_GRID);
@@ -127,7 +129,7 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
 
         // Time label
         lv_obj_t *timeLabel = lv_label_create(topRibbon);
-        lv_obj_set_style_text_font(timeLabel, &lv_font_montserrat_8, LV_PART_MAIN);
+        lv_obj_add_style(timeLabel, &styleLabel, LV_PART_MAIN);
         lv_obj_set_align(timeLabel, LV_ALIGN_CENTER);
         lv_obj_set_style_text_align(timeLabel, LV_ALIGN_CENTER, LV_PART_MAIN);
         lv_label_set_text(timeLabel, "");
@@ -265,7 +267,7 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_meter_set_indicator_end_value(pressureMeter, fairArc, MAX_PRESSURE_HPA);
 
         lv_obj_t *unitLabel = lv_label_create(pressureMeter);
-        lv_label_set_text(unitLabel, "hPa");
+        lv_label_set_text_static(unitLabel, "hPa");
         lv_obj_set_style_text_align(unitLabel, LV_ALIGN_CENTER, LV_PART_MAIN);
         lv_obj_align_to(unitLabel, pressureMeter, LV_ALIGN_CENTER, 0, 0.33 * pressureMeterWidth);
         lv_obj_add_style(unitLabel, &styleLabel, LV_PART_MAIN);
@@ -277,10 +279,10 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         uiTaskInterface->m_pressureMeter = pressureMeter;
     }
 
-    lv_obj_t *history = lv_tabview_add_tab(tabview, "");
-    lv_obj_set_size(history, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
-    lv_obj_set_style_pad_all(history, 0, 0);
-    lv_obj_center(history);
+    lv_obj_t *historyTab = lv_tabview_add_tab(tabview, "");
+    lv_obj_set_size(historyTab, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
+    lv_obj_set_style_pad_all(historyTab, 0, 0);
+    lv_obj_center(historyTab);
 
     {
         constexpr lv_coord_t labelPaddingTemperature{30};
@@ -290,28 +292,28 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         constexpr lv_coord_t chartHeight{CONFIG_LCD_V_RES - labelPaddingTime - titlePadding};
         constexpr lv_coord_t chartWidth{CONFIG_LCD_H_RES - labelPaddingTemperature - labelPaddingHumidity};
 
-        lv_obj_t *title = lv_label_create(history);
+        lv_obj_t *title = lv_label_create(historyTab);
         lv_obj_set_align(title, LV_ALIGN_TOP_MID);
         lv_obj_set_style_pad_all(title, 0, LV_PART_MAIN);
-        lv_obj_set_style_text_font(title, &lv_font_montserrat_8, LV_PART_MAIN);
-        lv_label_set_text(title, "Zeitverlauf");
+        lv_obj_add_style(title, &styleLabel, LV_PART_MAIN);
+        lv_label_set_text_static(title, "Zeitverlauf");
 
-        lv_obj_t *temperatureAxis = lv_label_create(history);
+        lv_obj_t *temperatureAxis = lv_label_create(historyTab);
         lv_obj_set_align(temperatureAxis, LV_ALIGN_TOP_LEFT);
         lv_obj_set_style_pad_all(temperatureAxis, 0, LV_PART_MAIN);
-        lv_obj_set_style_text_font(temperatureAxis, &lv_font_montserrat_8, LV_PART_MAIN);
-        lv_label_set_text(temperatureAxis, "°C");
+        lv_obj_add_style(temperatureAxis, &styleLabel, LV_PART_MAIN);
+        lv_label_set_text_static(temperatureAxis, "°C");
 
-        lv_obj_t *humidityAxis = lv_label_create(history);
+        lv_obj_t *humidityAxis = lv_label_create(historyTab);
         lv_obj_set_align(humidityAxis, LV_ALIGN_TOP_RIGHT);
         lv_obj_set_style_pad_all(humidityAxis, 0, LV_PART_MAIN);
-        lv_obj_set_style_text_font(humidityAxis, &lv_font_montserrat_8, LV_PART_MAIN);
-        lv_label_set_text(humidityAxis, "%");
+        lv_obj_add_style(humidityAxis, &styleLabel, LV_PART_MAIN);
+        lv_label_set_text_static(humidityAxis, "%");
 
-        lv_obj_t *chart = lv_chart_create(history);
+        lv_obj_t *chart = lv_chart_create(historyTab);
         lv_obj_set_size(chart, chartWidth, chartHeight);
         lv_obj_set_style_pad_all(chart, 0, LV_PART_MAIN);
-        lv_obj_set_style_text_font(chart, &lv_font_montserrat_8, LV_PART_TICKS);
+        lv_obj_add_style(chart, &styleLabel, LV_PART_TICKS);
         lv_obj_align(chart, LV_ALIGN_TOP_LEFT, labelPaddingTemperature, titlePadding);
         lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
         lv_chart_set_update_mode(chart, LV_CHART_UPDATE_MODE_SHIFT);
@@ -345,6 +347,48 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         uiTaskInterface->m_temperatureAndHumidityChart = chart;
         uiTaskInterface->m_temperatureSeries = temperatureSeries;
         uiTaskInterface->m_humiditySeries = humiditySeries;
+    }
+
+    lv_obj_t *wifiProvisioningTab = lv_tabview_add_tab(tabview, "");
+    lv_obj_set_size(wifiProvisioningTab, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
+    lv_obj_set_style_pad_all(wifiProvisioningTab, 0, 0);
+    lv_obj_center(wifiProvisioningTab);
+
+    {
+        {
+            lv_obj_t *onboardingLabel = lv_label_create(wifiProvisioningTab);
+            lv_obj_add_style(onboardingLabel, &styleLabel, LV_PART_MAIN);
+            lv_label_set_long_mode(onboardingLabel, LV_LABEL_LONG_WRAP);
+            lv_label_set_text_static(onboardingLabel, "Willkommen bei der ESP32 Wetterstation!");
+            lv_obj_set_width(onboardingLabel, lv_pct(80));
+            lv_obj_align(onboardingLabel, LV_ALIGN_TOP_MID, 0, 5);
+            lv_obj_set_style_text_align(onboardingLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        }
+
+        lv_color_t bgColor = lv_color_hex(0xFFFFFFFF);
+        lv_color_t fgColor = lv_color_hex(0x00000000);
+        lv_coord_t qrCodeSize{static_cast<lv_coord_t>(0.5 * std::min(CONFIG_LCD_H_RES, CONFIG_LCD_V_RES))};
+
+        const char *provisioningInfo = "https://lvgl.io";
+
+        {
+            lv_obj_t *instructionLabel = lv_label_create(wifiProvisioningTab);
+            lv_label_set_text_static(instructionLabel, "1. App \"ESP SoftAP Provisioning\" herunterladen\n2. QR Code in der App scannen");
+            lv_obj_set_width(instructionLabel, lv_pct(50));
+            lv_obj_set_align(instructionLabel, LV_ALIGN_LEFT_MID);
+            lv_obj_set_style_pad_left(instructionLabel, 2, LV_PART_MAIN);
+            lv_label_set_long_mode(instructionLabel, LV_LABEL_LONG_WRAP);
+            lv_obj_add_style(instructionLabel, &styleLabel, LV_PART_MAIN);
+        }
+
+        {
+            lv_obj_t *provisioningQR = lv_qrcode_create(wifiProvisioningTab, qrCodeSize, bgColor, fgColor);
+            lv_obj_set_align(provisioningQR, LV_ALIGN_RIGHT_MID);
+            lv_obj_set_style_pad_right(provisioningQR, 2, LV_PART_MAIN);
+            lv_qrcode_update(provisioningQR, provisioningInfo, strlen(provisioningInfo));
+            lv_obj_set_style_border_color(provisioningQR, bgColor, 0);
+            lv_obj_set_style_border_width(provisioningQR, 5, 0);
+        }
     }
 }
 
@@ -477,7 +521,7 @@ void task_lvgl(void *arg)
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_NUM_33, tabButtonIsrCallback, (void *)uiTaskInterface));
     ESP_ERROR_CHECK(gpio_wakeup_enable(GPIO_NUM_33, GPIO_INTR_LOW_LEVEL));
 
-    lv_tabview_set_act(uiTaskInterface->m_tabview, 1, LV_ANIM_OFF);
+    lv_tabview_set_act(uiTaskInterface->m_tabview, 2, LV_ANIM_OFF);
 
     while (true)
     {

@@ -17,8 +17,9 @@ idf_component_register(
         "st7735/esp_lcd_panel_st7735.c"
         "st7735/esp_lcd_panel_custom_vendor.h"
 
-        "ui/drop.c"
-        "ui/sun.c"
+        "ui/fonts/lv_font_montserrat_8_german.c"
+        "ui/icons/drop.c"
+        "ui/icons/sun.c"
         "ui/task_ui.cpp"
         "ui/task_ui.hpp"
         "ui/ui_task_interface.hpp"
