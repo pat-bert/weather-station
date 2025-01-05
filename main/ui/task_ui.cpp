@@ -559,7 +559,7 @@ void task_lvgl(void *arg)
                 if (buttonData.m_tabviewButtonPressed)
                 {
                     uint16_t current_tab = lv_tabview_get_tab_act(uiTaskInterface->m_tabview);
-                    uint16_t next_tab = (current_tab + 1) % 2;
+                    uint16_t next_tab = (current_tab + 1) % (uiTaskInterface->m_tabview->spec_attr->child_cnt + 1);
                     lv_tabview_set_act(uiTaskInterface->m_tabview, next_tab, LV_ANIM_ON);
                 }
             }
