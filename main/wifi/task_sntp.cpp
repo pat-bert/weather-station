@@ -19,8 +19,6 @@
 #define PROV_SEC2_USERNAME "wifiprov"
 #define PROV_SEC2_PWD "abcd1234"
 
-#define CONFIG_RESET_PROVISIONED 0
-
 /* This salt,verifier has been generated for username = "wifiprov" and password = "abcd1234"
  * IMPORTANT NOTE: For production cases, this must be unique to every device
  * and should come from device manufacturing partition.*/
@@ -273,11 +271,6 @@ void task_sntp(void *arg)
     ESP_ERROR_CHECK(wifi_prov_mgr_init(config));
 
     bool provisioned = false;
-#if CONFIG_RESET_PROVISIONED
-    ESP_ERROR_CHECK(wifi_prov_mgr_reset_provisioning());
-#endif
-
-    /* Let's find out if the device is provisioned */
     ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&provisioned));
 
     /* If device is not yet provisioned start provisioning service */

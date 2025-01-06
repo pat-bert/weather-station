@@ -1,6 +1,11 @@
 #include "esp_log.h"
 #include "esp_pm.h"
 #include "esp_sleep.h"
+#include "nvs_flash.h"
+
+#include "driver/gpio.h"
+
+#include "iot_button.h"
 
 #include "sensor/task_sensor.hpp"
 #include "ui/task_ui.hpp"
@@ -13,8 +18,32 @@
 
 // FreeRTOS
 #define STACK_SIZE_SENSOR_TASK (3000)
-#define LVGL_TASK_STACK_SIZE (5300)
+#define LVGL_TASK_STACK_SIZE (5500)
 #define SNTP_TASK_STACK_SIZE (4000)
+
+static void IRAM_ATTR factoryResetCallback(void *button_handle, void *usr_data)
+{
+    nvs_flash_erase();
+    esp_restart();
+}
+
+static void IRAM_ATTR changeActiveTabCallback(void *button_handle, void *usr_data)
+{
+    UiTaskInterface *uiTaskInterface = static_cast<UiTaskInterface *>(usr_data);
+
+    ButtonData buttonData{};
+    buttonData.m_tabviewButtonPressed = true;
+
+    QueueValueType queueData{buttonData};
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xQueueSendFromISR(uiTaskInterface->m_measurementQueue_in, &queueData, &xHigherPriorityTaskWoken);
+
+    if (xHigherPriorityTaskWoken)
+    {
+        portYIELD_FROM_ISR();
+    }
+}
 
 extern "C" void app_main(void)
 {
@@ -47,6 +76,22 @@ extern "C" void app_main(void)
     TaskHandle_t xHandleSntp{nullptr};
     xTaskCreate(task_sntp, "sntp", SNTP_TASK_STACK_SIZE, static_cast<void *>(&wifiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSntp);
     configASSERT(xHandleSntp);
+
+    button_config_t gpio_btn_cfg{};
+    gpio_btn_cfg.type = BUTTON_TYPE_GPIO;
+    gpio_btn_cfg.long_press_time = 7000;
+    gpio_btn_cfg.short_press_time = CONFIG_BUTTON_SHORT_PRESS_TIME_MS;
+    gpio_btn_cfg.gpio_button_config.gpio_num = CONFIG_BUTTON_GPIO;
+    gpio_btn_cfg.gpio_button_config.active_level = 0;
+    gpio_btn_cfg.gpio_button_config.enable_power_save = true;
+    button_handle_t gpio_btn = iot_button_create(&gpio_btn_cfg);
+    if (nullptr == gpio_btn)
+    {
+        ESP_LOGE(TAG, "Button create failed");
+    }
+
+    ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_SINGLE_CLICK, changeActiveTabCallback, static_cast<void *>(&uiTaskInterface)));
+    ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_LONG_PRESS_HOLD, factoryResetCallback, nullptr));
 
     vTaskSuspend(nullptr);
 }

@@ -5,7 +5,6 @@
 #include "st7735/esp_lcd_panel_custom_vendor.h"
 
 #include "driver/spi_master.h"
-#include "driver/gpio.h"
 
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
@@ -30,24 +29,6 @@ LV_IMG_DECLARE(drop);
 constexpr uint16_t numberOfSensorReadingsSaved{24};
 constexpr uint8_t hoursTickDivider{6};
 constexpr uint16_t numberMajorTicksHoursHistory{numberOfSensorReadingsSaved / hoursTickDivider + 1};
-
-static void IRAM_ATTR tabButtonIsrCallback(void *arg)
-{
-    UiTaskInterface *uiTaskInterface = static_cast<UiTaskInterface *>(arg);
-
-    ButtonData buttonData{};
-    buttonData.m_tabviewButtonPressed = true;
-
-    QueueValueType queueData{buttonData};
-
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    xQueueSendFromISR(uiTaskInterface->m_measurementQueue_in, &queueData, &xHigherPriorityTaskWoken);
-
-    if (xHigherPriorityTaskWoken)
-    {
-        portYIELD_FROM_ISR();
-    }
-}
 
 void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
 {
@@ -111,12 +92,12 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         {
             lv_obj_t *provisioningQR = lv_qrcode_create(wifiProvisioningTab);
             lv_qrcode_set_size(provisioningQR, qrCodeSize);
-            lv_qrcode_set_dark_color(provisioningQR, lv_color_white());
-            lv_qrcode_set_light_color(provisioningQR, lv_color_black());
+            lv_qrcode_set_dark_color(provisioningQR, lv_color_black());
+            lv_qrcode_set_light_color(provisioningQR, lv_color_white());
             lv_obj_set_align(provisioningQR, LV_ALIGN_RIGHT_MID);
             lv_obj_add_flag(provisioningQR, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_pad_right(provisioningQR, 2, LV_PART_MAIN);
-            lv_obj_set_style_border_color(provisioningQR, lv_color_black(), 0);
+            lv_obj_set_style_border_color(provisioningQR, lv_color_white(), 0);
             lv_obj_set_style_border_width(provisioningQR, 5, 0);
             uiTaskInterface->m_provisioningQrCode = provisioningQR;
         }
@@ -563,16 +544,6 @@ void task_lvgl(void *arg)
 
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
 
-    gpio_config_t ioConfig{};
-    ioConfig.pin_bit_mask = 1ULL << GPIO_NUM_33;
-    ioConfig.mode = GPIO_MODE_INPUT;
-    ioConfig.pull_up_en = GPIO_PULLUP_ENABLE;
-    ioConfig.intr_type = GPIO_INTR_NEGEDGE;
-    ESP_ERROR_CHECK(gpio_config(&ioConfig));
-    ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_EDGE));
-    ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_NUM_33, tabButtonIsrCallback, (void *)uiTaskInterface));
-    ESP_ERROR_CHECK(gpio_wakeup_enable(GPIO_NUM_33, GPIO_INTR_LOW_LEVEL));
-
     while (true)
     {
         task_delay_ms = lv_timer_handler();
@@ -610,7 +581,7 @@ void task_lvgl(void *arg)
             if (std::holds_alternative<ButtonData>(queueData))
             {
                 ButtonData &buttonData = std::get<ButtonData>(queueData);
-                if (buttonData.m_tabviewButtonPressed)
+                if (buttonData.m_tabviewButtonPressed && (uiTaskInterface->m_tabview != nullptr))
                 {
                     uint16_t current_tab = lv_tabview_get_tab_act(uiTaskInterface->m_tabview);
                     uint16_t next_tab = current_tab + 1;

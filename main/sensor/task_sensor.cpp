@@ -5,7 +5,6 @@
 
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "esp_pm.h"
 
 #include "rom/ets_sys.h"
 
