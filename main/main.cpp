@@ -13,7 +13,7 @@
 
 // FreeRTOS
 #define STACK_SIZE_SENSOR_TASK (3000)
-#define LVGL_TASK_STACK_SIZE (3000)
+#define LVGL_TASK_STACK_SIZE (5300)
 #define SNTP_TASK_STACK_SIZE (4000)
 
 extern "C" void app_main(void)

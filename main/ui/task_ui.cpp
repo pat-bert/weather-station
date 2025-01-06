@@ -18,6 +18,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
+#include <cstring>
 #include <ctime>
 #include <iterator>
 
@@ -48,32 +49,6 @@ static void IRAM_ATTR tabButtonIsrCallback(void *arg)
     }
 }
 
-static void draw_chart_horizontal_time_labels_callback(lv_event_t *e)
-{
-    lv_obj_draw_part_dsc_t *dsc = lv_event_get_draw_part_dsc(e);
-    if (!lv_obj_draw_part_check_type(dsc, &lv_chart_class, LV_CHART_DRAW_PART_TICK_LABEL))
-        return;
-
-    if (dsc->id == LV_CHART_AXIS_PRIMARY_X && dsc->text)
-    {
-        const int32_t tickIndexBackwards{(numberMajorTicksHoursHistory - 1) - dsc->value};
-        const int32_t hoursAgo{tickIndexBackwards * hoursTickDivider};
-
-        lv_snprintf(dsc->text, dsc->text_length, "-%" PRId32 "h", hoursAgo);
-    }
-    else if (dsc->id == LV_CHART_AXIS_PRIMARY_Y)
-    {
-        dsc->line_dsc->color = lv_palette_main(LV_PALETTE_RED);
-    }
-    else if (dsc->id == LV_CHART_AXIS_SECONDARY_Y)
-    {
-        dsc->line_dsc->color = lv_palette_main(LV_PALETTE_BLUE);
-    }
-    else
-    {
-    }
-}
-
 void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
 {
     constexpr lv_coord_t topRibbonHeight{15};
@@ -90,9 +65,11 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
     static lv_coord_t rowDescriptor[] = {topRibbonHeight, mainAreaHeight, LV_GRID_TEMPLATE_LAST};
     static lv_coord_t columnDescriptor[] = {temperatureContainerWidth, illuminanceContainerWidth, pressureContainerWidth, LV_GRID_TEMPLATE_LAST};
 
-    lv_obj_t *scr = lv_scr_act();
+    lv_obj_t *scr = lv_screen_active();
 
-    lv_obj_t *tabview = lv_tabview_create(scr, LV_DIR_NONE, 0);
+    lv_obj_t *tabview = lv_tabview_create(scr);
+    lv_tabview_set_tab_bar_position(tabview, LV_DIR_VER);
+    lv_tabview_set_tab_bar_size(tabview, 0);
     lv_obj_set_align(tabview, LV_ALIGN_CENTER);
     lv_obj_set_style_pad_all(tabview, 0, 0);
 
@@ -119,8 +96,6 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
             lv_obj_set_style_text_align(onboardingLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         }
 
-        lv_color_t bgColor = lv_color_hex(0xFFFFFFFF);
-        lv_color_t fgColor = lv_color_hex(0x00000000);
         lv_coord_t qrCodeSize{static_cast<lv_coord_t>(0.5 * std::min(CONFIG_LCD_H_RES, CONFIG_LCD_V_RES))};
 
         {
@@ -134,11 +109,14 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         }
 
         {
-            lv_obj_t *provisioningQR = lv_qrcode_create(wifiProvisioningTab, qrCodeSize, bgColor, fgColor);
+            lv_obj_t *provisioningQR = lv_qrcode_create(wifiProvisioningTab);
+            lv_qrcode_set_size(provisioningQR, qrCodeSize);
+            lv_qrcode_set_dark_color(provisioningQR, lv_color_white());
+            lv_qrcode_set_light_color(provisioningQR, lv_color_black());
             lv_obj_set_align(provisioningQR, LV_ALIGN_RIGHT_MID);
             lv_obj_add_flag(provisioningQR, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_pad_right(provisioningQR, 2, LV_PART_MAIN);
-            lv_obj_set_style_border_color(provisioningQR, bgColor, 0);
+            lv_obj_set_style_border_color(provisioningQR, lv_color_black(), 0);
             lv_obj_set_style_border_width(provisioningQR, 5, 0);
             uiTaskInterface->m_provisioningQrCode = provisioningQR;
         }
@@ -172,7 +150,7 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_obj_t *timeLabel = lv_label_create(topRibbon);
         lv_obj_add_style(timeLabel, &styleLabel, LV_PART_MAIN);
         lv_obj_set_align(timeLabel, LV_ALIGN_CENTER);
-        lv_obj_set_style_text_align(timeLabel, LV_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_set_style_text_align(timeLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         lv_label_set_text(timeLabel, "");
         lv_obj_set_style_pad_all(timeLabel, 0, LV_PART_MAIN);
 
@@ -203,7 +181,7 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_obj_add_style(temperatureLabel, &styleLabel, LV_PART_MAIN);
         // Align the label horizontally with the bar and position it 5 px above
         lv_label_set_text(temperatureLabel, "     °C");
-        lv_obj_set_style_text_align(temperatureLabel, LV_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_set_style_text_align(temperatureLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         lv_obj_set_align(temperatureLabel, LV_ALIGN_BOTTOM_MID);
 
         lv_obj_t *temperatureBar = lv_bar_create(temperatureContainer);
@@ -230,8 +208,8 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_obj_set_style_border_width(illuminanceContainer, 0, LV_PART_MAIN);
 
         // Illuminance
-        lv_obj_t *illumninanceIcon = lv_img_create(illuminanceContainer);
-        lv_img_set_src(illumninanceIcon, &sun);
+        lv_obj_t *illumninanceIcon = lv_image_create(illuminanceContainer);
+        lv_image_set_src(illumninanceIcon, &sun);
         lv_obj_set_align(illumninanceIcon, LV_ALIGN_TOP_MID);
         lv_obj_set_style_bg_opa(illumninanceIcon, LV_OPA_TRANSP, LV_PART_MAIN);
 
@@ -246,8 +224,8 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_obj_set_align(humidityLabel, LV_ALIGN_BOTTOM_MID);
         lv_obj_set_style_pad_all(humidityLabel, 0, LV_PART_MAIN);
 
-        lv_obj_t *humidityIcon = lv_img_create(illuminanceContainer);
-        lv_img_set_src(humidityIcon, &drop);
+        lv_obj_t *humidityIcon = lv_image_create(illuminanceContainer);
+        lv_image_set_src(humidityIcon, &drop);
         lv_obj_set_style_bg_opa(humidityIcon, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_align_to(humidityIcon, humidityLabel, LV_ALIGN_OUT_TOP_MID, 0, -5);
 
@@ -268,15 +246,13 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         constexpr lv_coord_t pressureMeterWidth{std::min(pressureContainerWidth, mainAreaHeight)};
 
         // Pressure Meter
-        lv_obj_t *pressureMeter = lv_meter_create(pressureContainer);
+        lv_obj_t *pressureMeter = lv_scale_create(pressureContainer);
+        lv_scale_set_mode(pressureMeter, LV_SCALE_MODE_ROUND_INNER);
         lv_obj_set_size(pressureMeter, pressureMeterWidth, pressureMeterWidth);
         lv_obj_set_align(pressureMeter, LV_ALIGN_CENTER);
-        lv_obj_add_style(pressureMeter, &styleLabel, LV_PART_TICKS);
+        lv_obj_add_style(pressureMeter, &styleLabel, LV_PART_INDICATOR);
         lv_obj_set_style_pad_all(pressureMeter, 0, LV_PART_MAIN);
         lv_obj_set_style_border_width(pressureMeter, 0, LV_PART_MAIN);
-
-        // Add a scale first
-        lv_meter_scale_t *scale = lv_meter_add_scale(pressureMeter);
 
         constexpr uint16_t tickCount{((MAX_PRESSURE_HPA - MIN_PRESSURE_HPA) / PRESSURE_TICKS_HPA) + 1};
         constexpr uint16_t nthMajor{4U};
@@ -292,29 +268,55 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         constexpr uint32_t angleRange{270};
         constexpr uint32_t rotation{135};
 
-        lv_meter_set_scale_ticks(pressureMeter, scale, tickCount, lineWidthMinor, lineLengthMinor, lv_palette_main(LV_PALETTE_GREY));
-        lv_meter_set_scale_major_ticks(pressureMeter, scale, nthMajor, lineWidthMajor, lineLengthMajor, lv_color_black(), labelGap);
-        lv_meter_set_scale_range(pressureMeter, scale, MIN_PRESSURE_HPA, MAX_PRESSURE_HPA, angleRange, rotation);
+        lv_scale_set_total_tick_count(pressureMeter, tickCount);
+        lv_scale_set_major_tick_every(pressureMeter, nthMajor);
+        lv_obj_set_style_length(pressureMeter, lineLengthMinor, LV_PART_ITEMS);
+        lv_obj_set_style_length(pressureMeter, lineLengthMajor, LV_PART_INDICATOR);
+        lv_obj_set_style_line_width(pressureMeter, lineWidthMinor, LV_PART_ITEMS);
+        lv_obj_set_style_line_width(pressureMeter, lineWidthMajor, LV_PART_INDICATOR);
+        lv_obj_set_style_line_color(pressureMeter, lv_palette_main(LV_PALETTE_GREY), LV_PART_ITEMS);
+        lv_obj_set_style_line_color(pressureMeter, lv_color_black(), LV_PART_ITEMS);
+        lv_scale_set_angle_range(pressureMeter, angleRange);
+        lv_scale_set_rotation(pressureMeter, rotation);
+        lv_scale_set_range(pressureMeter, MIN_PRESSURE_HPA, MAX_PRESSURE_HPA);
 
-        lv_meter_indicator_t *rainyArc = lv_meter_add_arc(pressureMeter, scale, arcWidth, lv_palette_main(LV_PALETTE_BLUE), 0);
-        lv_meter_indicator_t *changingArc = lv_meter_add_arc(pressureMeter, scale, arcWidth, lv_palette_main(LV_PALETTE_GREY), 0);
-        lv_meter_indicator_t *fairArc = lv_meter_add_arc(pressureMeter, scale, arcWidth, lv_palette_main(LV_PALETTE_YELLOW), 0);
+        lv_scale_section_t *rainyArc = lv_scale_add_section(pressureMeter);
+        lv_scale_section_t *changingArc = lv_scale_add_section(pressureMeter);
+        lv_scale_section_t *fairArc = lv_scale_add_section(pressureMeter);
 
-        lv_meter_set_indicator_start_value(pressureMeter, rainyArc, MIN_PRESSURE_HPA);
-        lv_meter_set_indicator_end_value(pressureMeter, rainyArc, PRESSURE_THRESHOLD_CHANGING);
-        lv_meter_set_indicator_start_value(pressureMeter, changingArc, PRESSURE_THRESHOLD_CHANGING);
-        lv_meter_set_indicator_end_value(pressureMeter, changingArc, PRESSURE_THRESHOLD_FAIR);
-        lv_meter_set_indicator_start_value(pressureMeter, fairArc, PRESSURE_THRESHOLD_FAIR);
-        lv_meter_set_indicator_end_value(pressureMeter, fairArc, MAX_PRESSURE_HPA);
+        lv_scale_section_set_range(rainyArc, MIN_PRESSURE_HPA, PRESSURE_THRESHOLD_CHANGING);
+        lv_scale_section_set_range(changingArc, PRESSURE_THRESHOLD_CHANGING, PRESSURE_THRESHOLD_FAIR);
+        lv_scale_section_set_range(fairArc, PRESSURE_THRESHOLD_FAIR, MAX_PRESSURE_HPA);
+
+        static lv_style_t styleRainy;
+        lv_style_init(&styleRainy);
+        lv_style_set_arc_color(&styleRainy, lv_palette_main(LV_PALETTE_BLUE));
+        lv_style_set_arc_width(&styleRainy, arcWidth);
+
+        static lv_style_t styleChanging;
+        lv_style_init(&styleChanging);
+        lv_style_set_arc_color(&styleChanging, lv_palette_main(LV_PALETTE_GREY));
+        lv_style_set_arc_width(&styleChanging, arcWidth);
+
+        static lv_style_t styleFair;
+        lv_style_init(&styleFair);
+        lv_style_set_arc_color(&styleFair, lv_palette_main(LV_PALETTE_YELLOW));
+        lv_style_set_arc_width(&styleFair, arcWidth);
+
+        lv_scale_section_set_style(rainyArc, LV_PART_MAIN, &styleRainy);
+        lv_scale_section_set_style(changingArc, LV_PART_MAIN, &styleChanging);
+        lv_scale_section_set_style(fairArc, LV_PART_MAIN, &styleFair);
 
         lv_obj_t *unitLabel = lv_label_create(pressureMeter);
         lv_label_set_text_static(unitLabel, "hPa");
-        lv_obj_set_style_text_align(unitLabel, LV_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_set_style_text_align(unitLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         lv_obj_align_to(unitLabel, pressureMeter, LV_ALIGN_CENTER, 0, 0.33 * pressureMeterWidth);
         lv_obj_add_style(unitLabel, &styleLabel, LV_PART_MAIN);
 
         // Add a needle line indicator
-        lv_meter_indicator_t *needle = lv_meter_add_needle_line(pressureMeter, scale, 3, lv_palette_main(LV_PALETTE_RED), -5);
+        lv_obj_t *needle = lv_line_create(pressureMeter);
+        lv_obj_set_style_line_width(needle, 3, LV_PART_MAIN);
+        lv_obj_set_style_line_color(needle, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN);
 
         uiTaskInterface->m_indic = needle;
         uiTaskInterface->m_pressureMeter = pressureMeter;
@@ -330,7 +332,8 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         constexpr lv_coord_t labelPaddingHumidity{30};
         constexpr lv_coord_t labelPaddingTime{25};
         constexpr lv_coord_t titlePadding{15};
-        constexpr lv_coord_t chartHeight{CONFIG_LCD_V_RES - labelPaddingTime - titlePadding};
+        constexpr lv_coord_t labelTopPadding{3};
+        constexpr lv_coord_t chartHeight{CONFIG_LCD_V_RES - labelPaddingTime - titlePadding - labelTopPadding};
         constexpr lv_coord_t chartWidth{CONFIG_LCD_H_RES - labelPaddingTemperature - labelPaddingHumidity};
 
         lv_obj_t *title = lv_label_create(historyTab);
@@ -351,18 +354,22 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_obj_add_style(humidityAxis, &styleLabel, LV_PART_MAIN);
         lv_label_set_text_static(humidityAxis, "%");
 
-        lv_obj_t *chart = lv_chart_create(historyTab);
+        lv_obj_t *chartWrapper = lv_obj_create(historyTab);
+        lv_obj_remove_style_all(chartWrapper);
+        lv_obj_set_size(chartWrapper, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES - titlePadding);
+        lv_obj_align(chartWrapper, LV_ALIGN_TOP_LEFT, 0, titlePadding);
+
+        lv_obj_t *chart = lv_chart_create(chartWrapper);
         lv_obj_set_size(chart, chartWidth, chartHeight);
+        lv_obj_align(chart, LV_ALIGN_TOP_LEFT, labelPaddingTemperature, labelTopPadding);
         lv_obj_set_style_pad_all(chart, 0, LV_PART_MAIN);
-        lv_obj_add_style(chart, &styleLabel, LV_PART_TICKS);
-        lv_obj_align(chart, LV_ALIGN_TOP_LEFT, labelPaddingTemperature, titlePadding);
+        lv_obj_set_style_radius(chart, 0, LV_PART_MAIN);
         lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
         lv_chart_set_update_mode(chart, LV_CHART_UPDATE_MODE_SHIFT);
         lv_chart_set_point_count(chart, numberOfSensorReadingsSaved);
-        lv_obj_add_event_cb(chart, draw_chart_horizontal_time_labels_callback, LV_EVENT_DRAW_PART_BEGIN, nullptr);
 
         // Data point size
-        lv_obj_set_style_size(chart, 2, LV_PART_INDICATOR);
+        lv_obj_set_style_size(chart, 2, 2, LV_PART_INDICATOR);
 
         // Vertical range
         lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, MIN_TEMPERATURE_C, MAX_TEMPERATURE_C);
@@ -371,10 +378,61 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         constexpr lv_coord_t maximumHumidity{100};
         lv_chart_set_range(chart, LV_CHART_AXIS_SECONDARY_Y, minimumHumidity, maximumHumidity);
 
-        // Axis ticks
-        lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_Y, 10, 5, ((MAX_TEMPERATURE_C - MIN_TEMPERATURE_C) / 2) + 1, 2, true, labelPaddingTemperature);
-        lv_chart_set_axis_tick(chart, LV_CHART_AXIS_SECONDARY_Y, 10, 5, 6, 2, true, labelPaddingHumidity);
-        lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_X, 10, 5, numberMajorTicksHoursHistory, hoursTickDivider, true, labelPaddingTime);
+        // x-Axis
+        {
+            lv_obj_t *scaleBottom = lv_scale_create(chartWrapper);
+            lv_scale_set_mode(scaleBottom, LV_SCALE_MODE_HORIZONTAL_BOTTOM);
+            lv_obj_set_size(scaleBottom, chartWidth, labelPaddingTime);
+            lv_obj_align_to(scaleBottom, chart, LV_ALIGN_OUT_BOTTOM_MID, 0, 0);
+            lv_scale_set_total_tick_count(scaleBottom, numberOfSensorReadingsSaved + 1);
+            lv_scale_set_major_tick_every(scaleBottom, hoursTickDivider);
+            lv_obj_add_style(scaleBottom, &styleLabel, LV_PART_INDICATOR);
+            lv_obj_set_style_length(scaleBottom, 10, LV_PART_INDICATOR);
+            lv_obj_set_style_length(scaleBottom, 5, LV_PART_ITEMS);
+            lv_obj_set_style_line_width(scaleBottom, 1, LV_PART_INDICATOR);
+            lv_obj_set_style_line_width(scaleBottom, 1, LV_PART_ITEMS);
+
+            static const char *hoursPassed[numberMajorTicksHoursHistory + 1]{"-24h", "-18h", "-12h", "-6h", "-0h", nullptr};
+            lv_scale_set_text_src(scaleBottom, hoursPassed);
+        }
+
+        // Primary y-Axis
+        {
+            lv_obj_t *scaleLeft = lv_scale_create(chartWrapper);
+            lv_scale_set_mode(scaleLeft, LV_SCALE_MODE_VERTICAL_LEFT);
+            lv_scale_set_range(scaleLeft, MIN_TEMPERATURE_C, MAX_TEMPERATURE_C);
+            lv_obj_set_size(scaleLeft, labelPaddingTemperature, chartHeight);
+            lv_obj_align_to(scaleLeft, chart, LV_ALIGN_OUT_LEFT_MID, 0, 0);
+            lv_scale_set_total_tick_count(scaleLeft, MAX_TEMPERATURE_C - MIN_TEMPERATURE_C + 1);
+            lv_scale_set_major_tick_every(scaleLeft, 2);
+            lv_obj_add_style(scaleLeft, &styleLabel, LV_PART_INDICATOR);
+            lv_obj_set_style_line_color(scaleLeft, lv_palette_main(LV_PALETTE_RED), LV_PART_INDICATOR);
+            lv_obj_set_style_line_color(scaleLeft, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN);
+            lv_obj_set_style_line_color(scaleLeft, lv_palette_main(LV_PALETTE_RED), LV_PART_ITEMS);
+            lv_obj_set_style_length(scaleLeft, 10, LV_PART_INDICATOR);
+            lv_obj_set_style_length(scaleLeft, 5, LV_PART_ITEMS);
+            lv_obj_set_style_line_width(scaleLeft, 1, LV_PART_INDICATOR);
+            lv_obj_set_style_line_width(scaleLeft, 1, LV_PART_ITEMS);
+        }
+
+        // Secondary y-Axis
+        {
+            lv_obj_t *scaleRight = lv_scale_create(chartWrapper);
+            lv_scale_set_mode(scaleRight, LV_SCALE_MODE_VERTICAL_RIGHT);
+            lv_scale_set_range(scaleRight, 0, 100);
+            lv_obj_set_size(scaleRight, labelPaddingHumidity, chartHeight);
+            lv_obj_align_to(scaleRight, chart, LV_ALIGN_OUT_RIGHT_MID, 0, 0);
+            lv_scale_set_total_tick_count(scaleRight, 11);
+            lv_scale_set_major_tick_every(scaleRight, 2);
+            lv_obj_add_style(scaleRight, &styleLabel, LV_PART_INDICATOR);
+            lv_obj_set_style_line_color(scaleRight, lv_palette_main(LV_PALETTE_BLUE), LV_PART_INDICATOR);
+            lv_obj_set_style_line_color(scaleRight, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
+            lv_obj_set_style_line_color(scaleRight, lv_palette_main(LV_PALETTE_BLUE), LV_PART_ITEMS);
+            lv_obj_set_style_length(scaleRight, 10, LV_PART_INDICATOR);
+            lv_obj_set_style_length(scaleRight, 5, LV_PART_ITEMS);
+            lv_obj_set_style_line_width(scaleRight, 1, LV_PART_INDICATOR);
+            lv_obj_set_style_line_width(scaleRight, 1, LV_PART_ITEMS);
+        }
 
         // Division lines
         lv_chart_set_div_line_count(chart, 6, numberMajorTicksHoursHistory);
@@ -393,19 +451,21 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
 
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
-    lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
-    lv_disp_flush_ready(disp_driver);
+    lv_display_t *display = static_cast<lv_display_t *>(user_ctx);
+    lv_display_flush_ready(display);
     return false;
 }
 
-static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
+static void lvgl_flush_cb(lv_display_t *display, const lv_area_t *area, unsigned char *color_map)
 {
-    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)drv->user_data;
+    esp_lcd_panel_handle_t panel_handle = static_cast<esp_lcd_panel_handle_t>(lv_display_get_user_data(display));
     int offsetx1 = area->x1;
     int offsetx2 = area->x2;
     int offsety1 = area->y1;
     int offsety2 = area->y2;
-    // copy a buffer's content to a specific area of the display
+
+    // swap upper and lower bytes of 16 bit color values due to endianness
+    lv_draw_sw_rgb565_swap(color_map, lv_area_get_size(area));
     esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
 }
 
@@ -422,7 +482,7 @@ void initSPI()
     ESP_ERROR_CHECK(spi_bus_initialize(static_cast<spi_host_device_t>(CONFIG_LCD_SPI_HOST), &buscfg, SPI_DMA_CH_AUTO)); // Enable the DMA feature
 }
 
-esp_lcd_panel_io_handle_t initPanelIO(lv_disp_drv_t *disp_drv)
+esp_lcd_panel_io_handle_t initPanelIO(lv_display_t *display)
 {
     initSPI();
 
@@ -437,7 +497,7 @@ esp_lcd_panel_io_handle_t initPanelIO(lv_disp_drv_t *disp_drv)
     io_config.flags.sio_mode = 1; // only MOSI, no MISO
     io_config.trans_queue_depth = 2;
     io_config.on_color_trans_done = notify_lvgl_flush_ready;
-    io_config.user_ctx = disp_drv;
+    io_config.user_ctx = display;
 
     // Attach the LCD to the SPI bus
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)CONFIG_LCD_SPI_HOST, &io_config, &io_handle));
@@ -445,9 +505,9 @@ esp_lcd_panel_io_handle_t initPanelIO(lv_disp_drv_t *disp_drv)
     return io_handle;
 }
 
-esp_lcd_panel_handle_t initPanel(lv_disp_drv_t *disp_drv)
+esp_lcd_panel_handle_t initPanel(lv_display_t *display)
 {
-    esp_lcd_panel_io_handle_t io_handle = initPanelIO(disp_drv);
+    esp_lcd_panel_io_handle_t io_handle = initPanelIO(display);
     esp_lcd_panel_handle_t panel_handle = nullptr;
     esp_lcd_panel_dev_config_t panel_config{};
     panel_config.reset_gpio_num = CONFIG_LCD_RST_GPIO;
@@ -470,41 +530,35 @@ void task_lvgl(void *arg)
     const char TAG[] = "lvgl";
     ESP_LOGI(TAG, "Starting LVGL task");
 
-    static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
-    static lv_disp_drv_t disp_drv;      // contains callback functions
+    ESP_LOGI(TAG, "Initialize LVGL library");
+    lv_init();
 
     ESP_LOGI(TAG, "Install ST7735 panel driver");
-    esp_lcd_panel_handle_t panel_handle = initPanel(&disp_drv);
+    lv_display_t *display = lv_display_create(CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
+    lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565);
+    esp_lcd_panel_handle_t panel_handle = initPanel(display);
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, false));
     ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, false));
     ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, true));
 
-    ESP_LOGI(TAG, "Initialize LVGL library");
-    lv_init();
     ESP_ERROR_CHECK(esp_register_freertos_tick_hook_for_cpu(increase_lvgl_tick, xPortGetCoreID()));
     // alloc draw buffers used by LVGL
     // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
-    lv_color_t *buf1 = (lv_color_t *)heap_caps_malloc(LVGL_BUFFER_ELEMENTS * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    const size_t bufferSize{static_cast<size_t>(LVGL_BUFFER_ELEMENTS * lv_color_format_get_size(lv_display_get_color_format(display)))};
+    void *buf1 = heap_caps_malloc(bufferSize, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     assert(buf1);
-    lv_color_t *buf2 = (lv_color_t *)heap_caps_malloc(LVGL_BUFFER_ELEMENTS * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    void *buf2 = heap_caps_malloc(bufferSize, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     assert(buf2);
-    // initialize LVGL draw buffers
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, LVGL_BUFFER_ELEMENTS);
 
-    ESP_LOGI(TAG, "Register display driver to LVGL");
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = CONFIG_LCD_H_RES;
-    disp_drv.ver_res = CONFIG_LCD_V_RES;
-    disp_drv.flush_cb = lvgl_flush_cb;
-    disp_drv.draw_buf = &disp_buf;
-    disp_drv.user_data = panel_handle;
-    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
+    lv_display_set_user_data(display, static_cast<void *>(panel_handle));
+    lv_display_set_buffers(display, buf1, buf2, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_flush_cb(display, lvgl_flush_cb);
 
     UiTaskInterface *uiTaskInterface{static_cast<UiTaskInterface *>(arg)};
     lvgl_create_ui(uiTaskInterface);
-    // user can flush pre-defined pattern to the screen before we turn on the screen or backlight
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
@@ -559,16 +613,20 @@ void task_lvgl(void *arg)
                 if (buttonData.m_tabviewButtonPressed)
                 {
                     uint16_t current_tab = lv_tabview_get_tab_act(uiTaskInterface->m_tabview);
-                    uint16_t next_tab = (current_tab + 1) % (uiTaskInterface->m_tabview->spec_attr->child_cnt + 1);
-                    lv_tabview_set_act(uiTaskInterface->m_tabview, next_tab, LV_ANIM_ON);
+                    uint16_t next_tab = current_tab + 1;
+                    if (next_tab >= lv_tabview_get_tab_count(uiTaskInterface->m_tabview))
+                    {
+                        next_tab = 0;
+                    }
+                    lv_tabview_set_active(uiTaskInterface->m_tabview, next_tab, LV_ANIM_OFF);
                 }
             }
             else if (std::holds_alternative<WifiData>(queueData))
             {
                 WifiData &wifiData = std::get<WifiData>(queueData);
 
-                lv_qrcode_update(uiTaskInterface->m_provisioningQrCode, wifiData.m_provisioningPayload, strlen(wifiData.m_provisioningPayload));
-                lv_obj_clear_flag(uiTaskInterface->m_provisioningQrCode, LV_OBJ_FLAG_HIDDEN);
+                lv_qrcode_update(uiTaskInterface->m_provisioningQrCode, wifiData.m_provisioningPayload, std::strlen(wifiData.m_provisioningPayload));
+                lv_obj_remove_flag(uiTaskInterface->m_provisioningQrCode, LV_OBJ_FLAG_HIDDEN);
             }
             else if (std::holds_alternative<SensorData>(queueData))
             {
@@ -587,7 +645,8 @@ void task_lvgl(void *arg)
                 }
                 if ((uiTaskInterface->m_pressureMeter != nullptr) && (uiTaskInterface->m_indic))
                 {
-                    lv_meter_set_indicator_end_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, sensorData.m_pressure / PRESSURE_SCALING_DIVISOR);
+                    int32_t w{lv_obj_get_width(uiTaskInterface->m_pressureMeter)};
+                    lv_scale_set_line_needle_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, w / 2 - 5, sensorData.m_pressure / PRESSURE_SCALING_DIVISOR);
                 }
                 if (uiTaskInterface->m_illuminanceLabel != nullptr)
                 {
