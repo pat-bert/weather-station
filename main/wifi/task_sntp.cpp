@@ -19,7 +19,7 @@
 #define PROV_SEC2_USERNAME "wifiprov"
 #define PROV_SEC2_PWD "abcd1234"
 
-#define CONFIG_EXAMPLE_RESET_PROVISIONED 0
+#define CONFIG_RESET_PROVISIONED 0
 
 /* This salt,verifier has been generated for username = "wifiprov" and password = "abcd1234"
  * IMPORTANT NOTE: For production cases, this must be unique to every device
@@ -200,36 +200,6 @@ static void wifi_calculate_qr_payload(const char *name, const char *username, co
     ESP_LOGI(TAG, "QR Code Payload: %s", payload);
 }
 
-#ifdef CONFIG_EXAMPLE_PROV_ENABLE_APP_CALLBACK
-void wifi_prov_app_callback(void *user_data, wifi_prov_cb_event_t event, void *event_data)
-{
-    /**
-     * This is blocking callback, any configurations that needs to be set when a particular
-     * provisioning event is triggered can be set here.
-     */
-    switch (event)
-    {
-    case WIFI_PROV_SET_STA_CONFIG:
-    {
-        /**
-         * Wi-Fi configurations can be set here before the Wi-Fi is enabled in
-         * STA mode.
-         */
-        wifi_config_t *wifi_config = (wifi_config_t *)event_data;
-        (void)wifi_config;
-        break;
-    }
-    default:
-        break;
-    }
-}
-
-const wifi_prov_event_handler_t wifi_prov_event_handler = {
-    .event_cb = wifi_prov_app_callback,
-    .user_data = nullptr,
-};
-#endif /* EXAMPLE_PROV_ENABLE_APP_CALLBACK */
-
 void sntp_time_sync_callback(struct timeval *tv)
 {
     settimeofday(tv, nullptr);
@@ -296,18 +266,6 @@ void task_sntp(void *arg)
         },
 #endif
         .scheme = wifi_prov_scheme_softap,
-#ifdef CONFIG_EXAMPLE_PROV_ENABLE_APP_CALLBACK
-        .app_event_handler = wifi_prov_event_handler,
-#endif /* EXAMPLE_PROV_ENABLE_APP_CALLBACK */
-
-        /* Any default scheme specific event handler that you would
-         * like to choose. Since our example application requires
-         * neither BT nor BLE, we can choose to release the associated
-         * memory once provisioning is complete, or not needed
-         * (in case when device is already provisioned). Choosing
-         * appropriate scheme specific event handler allows the manager
-         * to take care of this automatically. This can be set to
-         * WIFI_PROV_EVENT_HANDLER_NONE when using wifi_prov_scheme_softap*/
         .scheme_event_handler = WIFI_PROV_EVENT_HANDLER_NONE};
 
     /* Initialize provisioning manager with the
@@ -315,7 +273,7 @@ void task_sntp(void *arg)
     ESP_ERROR_CHECK(wifi_prov_mgr_init(config));
 
     bool provisioned = false;
-#if CONFIG_EXAMPLE_RESET_PROVISIONED
+#if CONFIG_RESET_PROVISIONED
     ESP_ERROR_CHECK(wifi_prov_mgr_reset_provisioning());
 #endif
 
@@ -363,11 +321,6 @@ void task_sntp(void *arg)
          */
         const char *service_key = nullptr;
 
-        /* Do not stop and de-init provisioning even after success,
-         * so that we can restart it later. */
-#ifdef CONFIG_EXAMPLE_REPROVISIONING
-        wifi_prov_mgr_disable_auto_stop(1000);
-#endif
         /* Start provisioning service */
         ESP_ERROR_CHECK(wifi_prov_mgr_start_provisioning(security, (const void *)sec_params, service_name, service_key));
 
