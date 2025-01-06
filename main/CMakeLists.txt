@@ -24,6 +24,7 @@ idf_component_register(
         "ui/task_ui.hpp"
         "ui/ui_task_interface.hpp"
 
+        "wifi/build_time.hpp"
         "wifi/task_sntp.cpp"
         "wifi/task_sntp.hpp"
         "wifi/wifi_client.cpp"
@@ -39,3 +40,9 @@ idf_component_register(
         "ui"
         "wifi"
 )
+
+# Path to the header file
+set(HEADER_FILE_PATH "${CMAKE_SOURCE_DIR}/main/wifi/build_time.hpp")
+
+# Update the timestamp of the header file
+file(TOUCH ${HEADER_FILE_PATH})
