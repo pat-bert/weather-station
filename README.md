@@ -23,9 +23,20 @@ The sensor readings are displayed on a 128x160 pixel TFT color display based on 
 
 The screens are created using [LVGL v9.3](https://lvgl.io/) which can redraw subsets of the whole screen based on which widgets (temperature labels, animations etc.) need to be updated.
 
+The Wi-Fi connection can be established by scanning the QR-code first displayed on the welcome screen of the display using the *ESP SoftAP Provisioning App* ([Android](https://play.google.com/store/apps/details?id=com.espressif.provsoftap), [iOS](https://apps.apple.com/us/app/esp-softap-provisioning/id1474040630)) and selecting the desired Wi-Fi network. The credentials are transmitted encrypted via a temporary access point created by the ESP32 and stored in the internal flash. Consequently, the QR-code will no longer be shown and the Wi-Fi connection will be re-established after each power cycle using the saved credentials.
+
+Please keep in mind that this is a hobby project and neither is the flash currently encrypted nor are the provisioning credentials secret or unique per device.
+
+The user can change between the currently displayed screens by a single short click on the push-button. Holding the push-button for seven seconds or longer will perform a factory reset after which the Wi-Fi credentials are lost and the QR-code will be shown again.
+
 ## Configuration
 
-The pin mappings and usage of internal I²C and SPI hosts can be parametrized as well as the refresh period of the sensors (default: once per minute).
+- Pin mappings
+- Usage of internal I²C and SPI hosts
+- Refresh period of the sensors (default: once per minute)
+- Server address for NTP time synchronisation
+- Refresh period for NTP (default: 24 hours)
+- Timezone including day-light-saving
 
 ## Roadmap
 
@@ -34,6 +45,8 @@ The pin mappings and usage of internal I²C and SPI hosts can be parametrized as
 - [ ] Check feasibility of Matter integration, e.g. with Google Home to provide a warning based on humidity and temperature thresholds
 - [ ] Implement averaging for correct 24 h history instead of 24 min
 - [ ] Read sensors in deep-sleep using LP core
+- [ ] Re-evaluate power usage with Firebeetle
+- [ ] Measure air quality and/or CO2 content
 
 ## How to build the software
 
