@@ -481,7 +481,7 @@ esp_lcd_panel_io_handle_t initPanelIO(lv_display_t *display)
     io_config.user_ctx = display;
 
     // Attach the LCD to the SPI bus
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)CONFIG_LCD_SPI_HOST, &io_config, &io_handle));
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(static_cast<spi_host_device_t>(CONFIG_LCD_SPI_HOST), &io_config, &io_handle));
 
     return io_handle;
 }

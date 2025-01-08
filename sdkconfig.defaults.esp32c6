@@ -1,0 +1,14 @@
+# This file was generated using idf.py save-defconfig. It can be edited manually.
+# Espressif IoT Development Framework (ESP-IDF) 5.3.2 Project Minimal Configuration
+#
+CONFIG_BUTTON_GPIO=2
+CONFIG_LCD_CLOCK_MHZ=30
+CONFIG_LCD_SCLK_GPIO=6
+CONFIG_LCD_MOSI_GPIO=7
+CONFIG_LCD_CS_GPIO=16
+CONFIG_LCD_RST_GPIO=1
+CONFIG_LCD_DC_GPIO=18
+CONFIG_LCD_SPI_HOST=1
+CONFIG_SDA_GPIO=19
+CONFIG_SCL_GPIO=20
+CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
