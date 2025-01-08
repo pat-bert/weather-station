@@ -1,3 +1,5 @@
+// Source: <a href="https://www.flaticon.com/free-icons/water-drop" title="water drop icons">Water drop icons created by DinosoftLabs - Flaticon</a>
+
 #ifdef __has_include
     #if __has_include("lvgl.h")
         #ifndef LV_LVGL_H_INCLUDE_SIMPLE
