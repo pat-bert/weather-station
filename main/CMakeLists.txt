@@ -39,7 +39,19 @@ idf_component_register(
         "st7735"
         "ui"
         "wifi"
+    REQUIRES 
+        "driver"
+        "esp_event"
+        "esp_lcd"
+        "esp_netif"
+        "esp_wifi"
+        "nvs_flash"
+        "ulp"
+        "wifi_provisioning"
+    WHOLE_ARCHIVE
 )
+
+ulp_add_project("ulp" "${CMAKE_SOURCE_DIR}/main/ulp/")
 
 # Path to the header file
 set(HEADER_FILE_PATH "${CMAKE_SOURCE_DIR}/main/wifi/build_time.hpp")

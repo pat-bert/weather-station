@@ -2,15 +2,14 @@
 #include "esp_pm.h"
 #include "esp_sleep.h"
 #include "nvs_flash.h"
-
-#include "driver/gpio.h"
-
-#include "iot_button.h"
+#include "ulp_lp_core.h"
 
 #include "sensor/task_sensor.hpp"
 #include "ui/task_ui.hpp"
 #include "wifi/task_sntp.hpp"
 #include "wifi/wifi_task_interface.hpp"
+
+#include "iot_button.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -20,6 +19,9 @@
 #define STACK_SIZE_SENSOR_TASK (3000)
 #define LVGL_TASK_STACK_SIZE (5500)
 #define SNTP_TASK_STACK_SIZE (4000)
+
+extern const uint8_t ulp_build_system_example_bin_start[] asm("_binary_ulp_bin_start");
+extern const uint8_t ulp_build_system_example_bin_end[] asm("_binary_ulp_bin_end");
 
 static void IRAM_ATTR factoryResetCallback(void *button_handle, void *usr_data)
 {
@@ -45,6 +47,19 @@ static void IRAM_ATTR changeActiveTabCallback(void *button_handle, void *usr_dat
     }
 }
 
+static void init_ulp_program(void)
+{
+    esp_err_t err = ulp_lp_core_load_binary(ulp_build_system_example_bin_start, (ulp_build_system_example_bin_end - ulp_build_system_example_bin_start));
+    ESP_ERROR_CHECK(err);
+
+    /* Start the program */
+    ulp_lp_core_cfg_t cfg{};
+    cfg.wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU;
+
+    err = ulp_lp_core_run(&cfg);
+    ESP_ERROR_CHECK(err);
+}
+
 extern "C" void app_main(void)
 {
     const char *TAG{"main"};
@@ -52,7 +67,7 @@ extern "C" void app_main(void)
     esp_pm_config_t pm_config{};
     ESP_ERROR_CHECK(esp_pm_get_configuration(&pm_config));
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
-    pm_config.light_sleep_enable = true;
+    pm_config.light_sleep_enable = false;
 #endif
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
     ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_MODEM, ESP_PD_OPTION_ON));
@@ -92,6 +107,8 @@ extern "C" void app_main(void)
 
     ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_SINGLE_CLICK, changeActiveTabCallback, static_cast<void *>(&uiTaskInterface)));
     ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_LONG_PRESS_HOLD, factoryResetCallback, nullptr));
+
+    init_ulp_program();
 
     vTaskSuspend(nullptr);
 }
