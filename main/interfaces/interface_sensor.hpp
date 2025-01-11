@@ -1,9 +1,6 @@
 #ifndef INTERFACE_SENSOR_HPP_INCLUDED
 #define INTERFACE_SENSOR_HPP_INCLUDED
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
-
 #include <stdint.h>
 #include <variant>
 
@@ -19,17 +16,18 @@ struct ButtonData
 
 struct SensorData
 {
+#ifdef BME280_32BIT_ENABLE
+    uint32_t m_pressure;
+    int32_t m_temperature;
+    uint32_t m_humidity;
+#else
     double m_pressure;
     double m_temperature;
     double m_humidity;
+#endif
     uint16_t m_illuminance;
 };
 
 using QueueValueType = std::variant<SensorData, ButtonData, WifiData>;
-
-struct SensorTaskInterface
-{
-    QueueHandle_t m_measurementQueue_out;
-};
 
 #endif

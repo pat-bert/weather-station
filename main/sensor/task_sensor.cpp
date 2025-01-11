@@ -2,15 +2,30 @@
 
 #include "bme280/bme280.h"
 #include "bh1750/bh1750.hpp"
+#include "interfaces/interface_sensor.hpp"
 
 #include "esp_log.h"
 #include "esp_timer.h"
 
+#if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
+#include "ulp_lp_sensor.h"
+#endif
+
 #include "rom/ets_sys.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 
 #include <cstring>
 
 static const char TAG[] = "sensor";
+
+double uint32ToDouble(uint32_t high, uint32_t low) {
+    uint64_t temp = (static_cast<uint64_t>(high) << 32) | low;
+    double value;
+    std::memcpy(&value, &temp, sizeof(temp));
+    return value;
+}
 
 i2c_master_bus_handle_t initMasterI2C()
 {
@@ -145,8 +160,32 @@ int32_t bh1750_i2c_write(const uint8_t *reg_data, int32_t length, void *intf_ptr
 void task_sensor(void *arg)
 {
     ESP_LOGI(TAG, "Starting sensor task");
-
     const SensorTaskInterface *sensorTaskInterface{static_cast<SensorTaskInterface *>(arg)};
+
+#if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
+    while (true)
+    {
+        if (ulp_synchronisation)
+        {
+            SensorData sensorData{};
+
+            sensorData.m_illuminance = ulp_illuminance;
+            sensorData.m_humidity = uint32ToDouble(ulp_humidityHighByte, ulp_humidityLowByte);
+            sensorData.m_temperature = uint32ToDouble(ulp_temperatureHighByte, ulp_temperatureLowByte);
+            sensorData.m_pressure = uint32ToDouble(ulp_pressureHighByte, ulp_pressureLowByte);
+
+            ESP_LOGI(TAG, "%.2f °C %.0f%% %.2f hPa %u lx", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance);
+
+            QueueValueType queueData{sensorData};
+            if (xQueueSend(sensorTaskInterface->m_measurementQueue_out, &queueData, portMAX_DELAY) != pdPASS)
+            {
+                ESP_LOGE(TAG, "Failed to send measurement data to queue");
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS));
+    }
+#else
 
     i2c_master_bus_handle_t i2cBusHandle{initMasterI2C()};
     i2c_master_dev_handle_t i2cTempPressSensorHandle{initTempPressureI2CSlave(i2cBusHandle)};
@@ -229,4 +268,5 @@ void task_sensor(void *arg)
         ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
         vTaskDelay(pdMS_TO_TICKS(1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS));
     }
+#endif
 }

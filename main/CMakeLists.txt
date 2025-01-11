@@ -11,6 +11,7 @@ idf_component_register(
 
         "interfaces/interface_sensor.hpp"
 
+        "sensor/sensor_task_interface.hpp"
         "sensor/task_sensor.cpp"
         "sensor/task_sensor.hpp"
 
@@ -51,7 +52,9 @@ idf_component_register(
     WHOLE_ARCHIVE
 )
 
-ulp_add_project("ulp" "${CMAKE_SOURCE_DIR}/main/ulp/")
+if(CONFIG_ULP_COPROC_TYPE_LP_CORE)
+ulp_add_project("ulp_lp_sensor" "${CMAKE_SOURCE_DIR}/main/ulp/")
+endif()
 
 # Path to the header file
 set(HEADER_FILE_PATH "${CMAKE_SOURCE_DIR}/main/wifi/build_time.hpp")

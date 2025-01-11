@@ -245,7 +245,6 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         constexpr uint16_t lineWidthMinor{2U};
         constexpr uint16_t lineWidthMajor{3U};
 
-        constexpr int16_t labelGap{8};
         constexpr uint32_t angleRange{270};
         constexpr uint32_t rotation{135};
 
@@ -544,6 +543,12 @@ void task_lvgl(void *arg)
 
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
 
+    double temperatureAverageLastHour{0.0};
+    double humidityAverageLastHour{0.0};
+
+    uint8_t sensorReadingsLastHour{0U};
+    uint8_t hoursTracked{0U};
+
     while (true)
     {
         task_delay_ms = lv_timer_handler();
@@ -605,6 +610,21 @@ void task_lvgl(void *arg)
 
                 ESP_LOGI(TAG, "%.2f °C %.0f%% %.2f hPa %u lx @ %s", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance, timeStringBuffer);
 
+                sensorReadingsLastHour++;
+                if (sensorReadingsLastHour > 60)
+                {
+                    temperatureAverageLastHour = 0.0;
+                    humidityAverageLastHour = 0.0;
+                    sensorReadingsLastHour = 1;
+                    hoursTracked++;
+                    if (hoursTracked >= 24U)
+                    {
+                        hoursTracked = 0U;
+                    }
+                }
+                temperatureAverageLastHour = (temperatureAverageLastHour * (sensorReadingsLastHour - 1) + sensorData.m_temperature) / sensorReadingsLastHour;
+                humidityAverageLastHour = (humidityAverageLastHour * (sensorReadingsLastHour - 1) + sensorData.m_humidity) / sensorReadingsLastHour;
+
                 // Update sensor readings
                 if (uiTaskInterface->m_temperatureLabel != nullptr)
                 {
@@ -631,12 +651,26 @@ void task_lvgl(void *arg)
                 {
                     if (uiTaskInterface->m_temperatureSeries != nullptr)
                     {
-                        lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, sensorData.m_temperature);
+                        if (sensorReadingsLastHour == 1)
+                        {
+                            lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, temperatureAverageLastHour);
+                        }
+                        else
+                        {
+                            lv_chart_set_value_by_id(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, (numberOfSensorReadingsSaved - 1 + hoursTracked) % numberOfSensorReadingsSaved, temperatureAverageLastHour);
+                        }
                     }
 
                     if (uiTaskInterface->m_humiditySeries != nullptr)
                     {
-                        lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_humiditySeries, sensorData.m_humidity);
+                        if (sensorReadingsLastHour == 1)
+                        {
+                            lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_humiditySeries, humidityAverageLastHour);
+                        }
+                        else
+                        {
+                            lv_chart_set_value_by_id(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_humiditySeries, (numberOfSensorReadingsSaved - 1 + hoursTracked) % numberOfSensorReadingsSaved, humidityAverageLastHour);
+                        }
                     }
                 }
             }

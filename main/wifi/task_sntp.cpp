@@ -264,7 +264,8 @@ void task_sntp(void *arg)
         },
 #endif
         .scheme = wifi_prov_scheme_softap,
-        .scheme_event_handler = WIFI_PROV_EVENT_HANDLER_NONE};
+        .scheme_event_handler = WIFI_PROV_EVENT_HANDLER_NONE,
+        .app_event_handler = WIFI_PROV_EVENT_HANDLER_NONE};
 
     /* Initialize provisioning manager with the
      * configuration parameters set above */
