@@ -346,9 +346,6 @@ void task_sntp(void *arg)
     WifiClient wifiClient{};
     while (true)
     {
-        // ESP_ERROR_CHECK(wifiClient.init());
-        // ESP_ERROR_CHECK(wifiClient.connect(CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD));
-
         esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(CONFIG_SNTP_SERVER_URL);
         config.start = true;
         config.sync_cb = sntp_time_sync_callback;
@@ -356,7 +353,7 @@ void task_sntp(void *arg)
 
         // Wait for time to be synced
         int retry = 0;
-        const int retry_count = 15;
+        const int retry_count = 3;
         while ((esp_netif_sntp_sync_wait(pdMS_TO_TICKS(2000)) == ESP_ERR_TIMEOUT) && (++retry < retry_count))
         {
             ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
