@@ -34,21 +34,10 @@
     } while (0)
 
 volatile uint32_t illuminance = 0;
-volatile uint32_t pressureHighByte = 0;
-volatile uint32_t pressureLowByte = 0;
-volatile uint32_t temperatureHighByte = 0;
-volatile uint32_t temperatureLowByte = 0;
-volatile uint32_t humidityHighByte = 0;
-volatile uint32_t humidityLowByte = 0;
+volatile uint32_t pressure = 0;
+volatile int32_t temperature = 0;
+volatile uint32_t humidity = 0;
 volatile uint32_t synchronisation = 0;
-
-void doubleToUint32(double value, volatile uint32_t &high, volatile uint32_t &low)
-{
-    uint64_t temp;
-    std::memcpy(&temp, &value, sizeof(temp));
-    high = static_cast<uint32_t>(temp >> 32);
-    low = static_cast<uint32_t>(temp);
-}
 
 static BME280_INTF_RET_TYPE bme280_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t length, void *intf_ptr)
 {
@@ -165,10 +154,16 @@ extern "C" int main(void)
     ret = bme280_get_sensor_data(BME280_ALL, &measurement, &bme280);
     BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
 
-    // Synchronize sensor data for main core
-    doubleToUint32(measurement.temperature, temperatureHighByte, temperatureLowByte);
-    doubleToUint32(measurement.pressure, pressureHighByte, pressureLowByte);
-    doubleToUint32(measurement.humidity, humidityHighByte, humidityLowByte);
+// Synchronize sensor data for main core
+#ifndef BME280_DOUBLE_ENABLE
+    temperature = measurement.temperature;
+    pressure = measurement.pressure / 100;
+    humidity = measurement.humidity / 1000;
+#else
+    temperature = measurement.temperature;
+    pressure = measurement.pressure;
+    humidity = measurement.humidity;
+#endif
     illuminance = static_cast<uint32_t>(illuminanceReading);
 
     synchronisation = 1;

@@ -52,6 +52,8 @@ idf_component_register(
     WHOLE_ARCHIVE
 )
 
+add_compile_definitions(BME280_64BIT_ENABLE)
+
 if(CONFIG_ULP_COPROC_TYPE_LP_CORE)
 ulp_add_project("ulp_lp_sensor" "${CMAKE_SOURCE_DIR}/main/ulp/")
 endif()

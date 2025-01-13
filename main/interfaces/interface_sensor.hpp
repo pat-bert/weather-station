@@ -16,14 +16,14 @@ struct ButtonData
 
 struct SensorData
 {
-#ifdef BME280_32BIT_ENABLE
-    uint32_t m_pressure;
-    int32_t m_temperature;
-    uint32_t m_humidity;
-#else
+#ifdef BME280_DOUBLE_ENABLE
     double m_pressure;
     double m_temperature;
     double m_humidity;
+#else
+    uint32_t m_pressure;   // Pressure in Pa
+    int32_t m_temperature; // Temperature in 0.01 °C
+    uint32_t m_humidity;   // Humidity in RH%
 #endif
     uint16_t m_illuminance;
 };

@@ -32,3 +32,5 @@ target_include_directories(sensor_lib
 
 # Link the library
 target_link_libraries(${ULP_APP_NAME} PRIVATE sensor_lib)
+
+add_compile_definitions(BME280_64BIT_ENABLE)

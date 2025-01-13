@@ -77,7 +77,7 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
             lv_obj_set_style_text_align(onboardingLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         }
 
-        lv_coord_t qrCodeSize{static_cast<lv_coord_t>(0.5 * std::min(CONFIG_LCD_H_RES, CONFIG_LCD_V_RES))};
+        lv_coord_t qrCodeSize{std::min(CONFIG_LCD_H_RES, CONFIG_LCD_V_RES) / 2};
 
         {
             lv_obj_t *instructionLabel = lv_label_create(wifiProvisioningTab);
@@ -148,8 +148,8 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_obj_set_style_border_width(temperatureContainer, 0, LV_PART_MAIN);
 
         // Temperature bar
-        constexpr lv_coord_t temperatureBarWidth{static_cast<lv_coord_t>(0.5F * temperatureContainerWidth)};
-        constexpr lv_coord_t temperatureBarHeight{static_cast<lv_coord_t>(0.8F * mainAreaHeight)};
+        constexpr lv_coord_t temperatureBarWidth{temperatureContainerWidth / 2};
+        constexpr lv_coord_t temperatureBarHeight{8 * mainAreaHeight / 10};
 
         static lv_style_t styleIndic;
         lv_style_init(&styleIndic);
@@ -290,7 +290,7 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
         lv_obj_t *unitLabel = lv_label_create(pressureMeter);
         lv_label_set_text_static(unitLabel, "hPa");
         lv_obj_set_style_text_align(unitLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-        lv_obj_align_to(unitLabel, pressureMeter, LV_ALIGN_CENTER, 0, 0.33 * pressureMeterWidth);
+        lv_obj_align_to(unitLabel, pressureMeter, LV_ALIGN_CENTER, 0, pressureMeterWidth / 3);
         lv_obj_add_style(unitLabel, &styleLabel, LV_PART_MAIN);
 
         // Add a needle line indicator
@@ -502,7 +502,7 @@ esp_lcd_panel_handle_t initPanel(lv_display_t *display)
 
 void IRAM_ATTR increase_lvgl_tick(void)
 {
-    lv_tick_inc(1000.0 / CONFIG_FREERTOS_HZ);
+    lv_tick_inc(1000 / CONFIG_FREERTOS_HZ);
 }
 
 void task_lvgl(void *arg)
@@ -543,8 +543,8 @@ void task_lvgl(void *arg)
 
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
 
-    double temperatureAverageLastHour{0.0};
-    double humidityAverageLastHour{0.0};
+    int32_t temperatureAverageLastHourCentigrade{0};
+    uint32_t humidityAverageLastHour{0U};
 
     uint8_t sensorReadingsLastHour{0U};
     uint8_t hoursTracked{0U};
@@ -608,13 +608,13 @@ void task_lvgl(void *arg)
             {
                 SensorData &sensorData = std::get<SensorData>(queueData);
 
-                ESP_LOGI(TAG, "%.2f °C %.0f%% %.2f hPa %u lx @ %s", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance, timeStringBuffer);
+                ESP_LOGI(TAG, "%ld.%ld °C %ld%% %ld hPa %u lx @ %s", sensorData.m_temperature / 100, sensorData.m_temperature % 100, sensorData.m_humidity, sensorData.m_pressure / 100, sensorData.m_illuminance, timeStringBuffer);
 
                 sensorReadingsLastHour++;
                 if (sensorReadingsLastHour > 60)
                 {
-                    temperatureAverageLastHour = 0.0;
-                    humidityAverageLastHour = 0.0;
+                    temperatureAverageLastHourCentigrade = 0;
+                    humidityAverageLastHour = 0U;
                     sensorReadingsLastHour = 1;
                     hoursTracked++;
                     if (hoursTracked >= 24U)
@@ -622,17 +622,17 @@ void task_lvgl(void *arg)
                         hoursTracked = 0U;
                     }
                 }
-                temperatureAverageLastHour = (temperatureAverageLastHour * (sensorReadingsLastHour - 1) + sensorData.m_temperature) / sensorReadingsLastHour;
+                temperatureAverageLastHourCentigrade = (temperatureAverageLastHourCentigrade * (sensorReadingsLastHour - 1) + sensorData.m_temperature) / sensorReadingsLastHour;
                 humidityAverageLastHour = (humidityAverageLastHour * (sensorReadingsLastHour - 1) + sensorData.m_humidity) / sensorReadingsLastHour;
 
                 // Update sensor readings
                 if (uiTaskInterface->m_temperatureLabel != nullptr)
                 {
-                    lv_label_set_text_fmt(uiTaskInterface->m_temperatureLabel, "%.1f °C", sensorData.m_temperature);
+                    lv_label_set_text_fmt(uiTaskInterface->m_temperatureLabel, "%ld.%ld °C", sensorData.m_temperature / 100, (sensorData.m_temperature % 100) / 10);
                 }
                 if (uiTaskInterface->m_temperatureBar != nullptr)
                 {
-                    lv_bar_set_value(uiTaskInterface->m_temperatureBar, sensorData.m_temperature * TEMPERATURE_SCALING_FACTOR, LV_ANIM_OFF);
+                    lv_bar_set_value(uiTaskInterface->m_temperatureBar, sensorData.m_temperature / 100 * TEMPERATURE_SCALING_FACTOR, LV_ANIM_OFF);
                 }
                 if ((uiTaskInterface->m_pressureMeter != nullptr) && (uiTaskInterface->m_indic))
                 {
@@ -645,7 +645,7 @@ void task_lvgl(void *arg)
                 }
                 if (uiTaskInterface->m_humidityLabel != nullptr)
                 {
-                    lv_label_set_text_fmt(uiTaskInterface->m_humidityLabel, "%.0f%%", sensorData.m_humidity);
+                    lv_label_set_text_fmt(uiTaskInterface->m_humidityLabel, "%ld%%", sensorData.m_humidity);
                 }
                 if (uiTaskInterface->m_temperatureAndHumidityChart != nullptr)
                 {
@@ -653,11 +653,11 @@ void task_lvgl(void *arg)
                     {
                         if (sensorReadingsLastHour == 1)
                         {
-                            lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, temperatureAverageLastHour);
+                            lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, temperatureAverageLastHourCentigrade / 100);
                         }
                         else
                         {
-                            lv_chart_set_value_by_id(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, (numberOfSensorReadingsSaved - 1 + hoursTracked) % numberOfSensorReadingsSaved, temperatureAverageLastHour);
+                            lv_chart_set_value_by_id(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, (numberOfSensorReadingsSaved - 1 + hoursTracked) % numberOfSensorReadingsSaved, temperatureAverageLastHourCentigrade / 100);
                         }
                     }
 

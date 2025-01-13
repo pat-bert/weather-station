@@ -4,6 +4,7 @@
 #include "bh1750/bh1750.hpp"
 #include "interfaces/interface_sensor.hpp"
 
+#include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -19,13 +20,6 @@
 #include <cstring>
 
 static const char TAG[] = "sensor";
-
-double uint32ToDouble(uint32_t high, uint32_t low) {
-    uint64_t temp = (static_cast<uint64_t>(high) << 32) | low;
-    double value;
-    std::memcpy(&value, &temp, sizeof(temp));
-    return value;
-}
 
 i2c_master_bus_handle_t initMasterI2C()
 {
@@ -170,11 +164,11 @@ void task_sensor(void *arg)
             SensorData sensorData{};
 
             sensorData.m_illuminance = ulp_illuminance;
-            sensorData.m_humidity = uint32ToDouble(ulp_humidityHighByte, ulp_humidityLowByte);
-            sensorData.m_temperature = uint32ToDouble(ulp_temperatureHighByte, ulp_temperatureLowByte);
-            sensorData.m_pressure = uint32ToDouble(ulp_pressureHighByte, ulp_pressureLowByte);
+            sensorData.m_humidity = ulp_humidity;
+            sensorData.m_temperature = ulp_temperature;
+            sensorData.m_pressure = ulp_pressure;
 
-            ESP_LOGI(TAG, "%.2f °C %.0f%% %.2f hPa %u lx", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance);
+            ESP_LOGI(TAG, "%ld.%ld °C %ld%% %ld hPa %u lx", sensorData.m_temperature / 100, sensorData.m_temperature % 100, sensorData.m_humidity, sensorData.m_pressure / 100, sensorData.m_illuminance);
 
             QueueValueType queueData{sensorData};
             if (xQueueSend(sensorTaskInterface->m_measurementQueue_out, &queueData, portMAX_DELAY) != pdPASS)
@@ -244,9 +238,16 @@ void task_sensor(void *arg)
         bme280_error_codes_print_result(rslt);
 
         SensorData sensorData{};
+
+#ifndef BME280_DOUBLE_ENABLE
+        sensorData.m_temperature = measurement.temperature;
+        sensorData.m_pressure = measurement.pressure / 100;
+        sensorData.m_humidity = measurement.humidity / 1000;
+#else
         sensorData.m_temperature = measurement.temperature;
         sensorData.m_pressure = measurement.pressure;
         sensorData.m_humidity = measurement.humidity;
+#endif
 
         int64_t illuminanceEndTimeUs{esp_timer_get_time()};
         int64_t illuminancePassedTimeMs{(illuminanceEndTimeUs - illuminanceStartTimeUs) / 1000};
@@ -257,7 +258,7 @@ void task_sensor(void *arg)
 
         ESP_ERROR_CHECK(bh1750.readMeasurement(sensorData.m_illuminance));
 
-        ESP_LOGI(TAG, "%.2f °C %.0f%% %.2f hPa %u lx", sensorData.m_temperature, sensorData.m_humidity, sensorData.m_pressure / 100.0, sensorData.m_illuminance);
+        ESP_LOGI(TAG, "%ld.%ld °C %ld%% %ld hPa %u lx", sensorData.m_temperature / 100, sensorData.m_temperature % 100, sensorData.m_humidity, sensorData.m_pressure / 100, sensorData.m_illuminance);
 
         QueueValueType queueData{sensorData};
         if (xQueueSend(sensorTaskInterface->m_measurementQueue_out, &queueData, portMAX_DELAY) != pdPASS)
