@@ -1,3 +1,5 @@
+#include "driver/ledc.h"
+
 #include "esp_log.h"
 #include "esp_pm.h"
 #include "esp_sleep.h"
@@ -58,7 +60,7 @@ static void IRAM_ATTR changeActiveTabCallback(void *button_handle, void *usr_dat
     }
 }
 
-static void init_button(UiTaskInterface &uiTaskInterface)
+static void initButton(UiTaskInterface &uiTaskInterface)
 {
     button_config_t gpio_btn_cfg{};
     gpio_btn_cfg.type = BUTTON_TYPE_GPIO;
@@ -75,6 +77,33 @@ static void init_button(UiTaskInterface &uiTaskInterface)
 
     ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_SINGLE_CLICK, changeActiveTabCallback, static_cast<void *>(&uiTaskInterface)));
     ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_LONG_PRESS_HOLD, factoryResetCallback, nullptr));
+}
+
+#define LEDC_OUTPUT_IO (8) // Define the output GPIO
+#define LEDC_DUTY (4096)                // Set duty to 50%. (2 ** 13) * 50% = 4096
+#define LEDC_FREQUENCY (4000)           // Frequency in Hertz. Set frequency at 4 kHz
+
+static void initLcdBackLight()
+{
+    // Prepare and then apply the LEDC PWM timer configuration
+    ledc_timer_config_t ledc_timer{};
+    ledc_timer.speed_mode = LEDC_LOW_SPEED_MODE;
+    ledc_timer.timer_num = LEDC_TIMER_0;
+    ledc_timer.duty_resolution = LEDC_TIMER_13_BIT;
+    ledc_timer.freq_hz = LEDC_FREQUENCY; // Set output frequency at 4 kH
+    ledc_timer.clk_cfg = LEDC_AUTO_CLK;
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+    // Prepare and then apply the LEDC PWM channel configuration
+    ledc_channel_config_t ledc_channel{};
+    ledc_channel.speed_mode = LEDC_LOW_SPEED_MODE;
+    ledc_channel.channel = LEDC_CHANNEL_0;
+    ledc_channel.timer_sel = LEDC_TIMER_0;
+    ledc_channel.intr_type = LEDC_INTR_DISABLE;
+    ledc_channel.gpio_num = LEDC_OUTPUT_IO;
+    ledc_channel.duty = (1ULL << 13);
+    ledc_channel.hpoint = 0;
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
 }
 
 #if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
@@ -151,7 +180,9 @@ extern "C" void app_main(void)
     xTaskCreate(task_sntp, "sntp", SNTP_TASK_STACK_SIZE, static_cast<void *>(&wifiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSntp);
     configASSERT(xHandleSntp);
 
-    init_button(uiTaskInterface);
+    initButton(uiTaskInterface);
+
+    initLcdBackLight();
 
     vTaskSuspend(nullptr);
 }
