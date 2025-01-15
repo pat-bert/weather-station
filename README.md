@@ -40,13 +40,15 @@ The user can change between the currently displayed screens by a single short cl
 
 ## Roadmap
 
-- [ ] Sleep display after n seconds of user inactivity
+- [x] Implement averaging for correct 24 h history instead of 24 min
+- [x] Read sensors using LP core
+- [ ] Sleep display and turn off backlight after n seconds of user inactivity
+- [ ] Wake display based on button
 - [ ] Wake display based on proximity reading from time-of-flight sensor
-- [ ] Check feasibility of Matter integration, e.g. with Google Home to provide a warning based on humidity and temperature thresholds
-- [ ] Implement averaging for correct 24 h history instead of 24 min
-- [ ] Read sensors in deep-sleep using LP core
+- [ ] Deep sleep HP core
 - [ ] Re-evaluate power usage with Firebeetle
 - [ ] Measure air quality and/or CO2 content
+- [ ] Check feasibility of Matter integration, e.g. with Google Home to provide a warning based on humidity and temperature thresholds
 
 ## How to build the software
 

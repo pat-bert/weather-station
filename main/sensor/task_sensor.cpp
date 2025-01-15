@@ -8,10 +8,6 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
-#if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
-#include "ulp_lp_sensor.h"
-#endif
-
 #include "rom/ets_sys.h"
 
 #include "freertos/FreeRTOS.h"
@@ -156,31 +152,6 @@ void task_sensor(void *arg)
     ESP_LOGI(TAG, "Starting sensor task");
     const SensorTaskInterface *sensorTaskInterface{static_cast<SensorTaskInterface *>(arg)};
 
-#if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
-    while (true)
-    {
-        if (ulp_synchronisation)
-        {
-            SensorData sensorData{};
-
-            sensorData.m_illuminance = ulp_illuminance;
-            sensorData.m_humidity = ulp_humidity;
-            sensorData.m_temperature = ulp_temperature;
-            sensorData.m_pressure = ulp_pressure;
-
-            ESP_LOGI(TAG, "%ld.%ld °C %ld%% %ld hPa %u lx", sensorData.m_temperature / 100, sensorData.m_temperature % 100, sensorData.m_humidity, sensorData.m_pressure / 100, sensorData.m_illuminance);
-
-            QueueValueType queueData{sensorData};
-            if (xQueueSend(sensorTaskInterface->m_measurementQueue_out, &queueData, portMAX_DELAY) != pdPASS)
-            {
-                ESP_LOGE(TAG, "Failed to send measurement data to queue");
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS));
-    }
-#else
-
     i2c_master_bus_handle_t i2cBusHandle{initMasterI2C()};
     i2c_master_dev_handle_t i2cTempPressSensorHandle{initTempPressureI2CSlave(i2cBusHandle)};
     i2c_master_dev_handle_t i2cIlluminanceSensorHandle(initIlluminanceI2CSlave(i2cBusHandle));
@@ -269,5 +240,4 @@ void task_sensor(void *arg)
         ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
         vTaskDelay(pdMS_TO_TICKS(1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS));
     }
-#endif
 }

@@ -1,6 +1,5 @@
 #include "../bh1750/bh1750.hpp"
 #include "../bme280/bme280.h"
-#include "../interfaces/interface_sensor.hpp"
 
 #include "ulp_lp_core_i2c.h"
 #include "ulp_lp_core_utils.h"
@@ -88,9 +87,6 @@ static int32_t bh1750_i2c_write(const uint8_t *reg_data, int32_t length, void *i
 
 extern "C" int main(void)
 {
-    synchronisation = 0;
-    static bool needsInit{true};
-
     BH1750 bh1750{bh1750_i2c_read, bh1750_i2c_write, nullptr};
     constexpr BH1750::Resolution illuminanceResolution{BH1750::Resolution::medium};
     const uint32_t illuminanceMeasurementTimeMs{bh1750.getMeasurementTimeMs(illuminanceResolution)};
@@ -105,69 +101,69 @@ extern "C" int main(void)
     bme280_data measurement{};
     uint32_t bme280MeasurementTimeUs{0U};
 
-    SensorData sensorData{};
     int32_t ret;
-    static bme280_settings settings{};
+    bme280_settings settings{};
 
-    if (needsInit)
+    ret = bme280_init(&bme280);
+    BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+
+    // Always read the current settings before writing, especially when all the configuration is not modified
+    ret = bme280_get_sensor_settings(&settings, &bme280);
+    BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+
+    // Configuring the over-sampling mode, filter coefficient and output data rate
+    // Overwrite the desired settings
+    settings.filter = BME280_FILTER_COEFF_OFF;
+    settings.osr_h = BME280_OVERSAMPLING_1X;
+    settings.osr_t = BME280_OVERSAMPLING_1X;
+    settings.osr_p = BME280_OVERSAMPLING_1X;
+    settings.standby_time = BME280_STANDBY_TIME_0_5_MS;
+
+    ret = bme280_set_sensor_settings(BME280_SEL_ALL_SETTINGS, &settings, &bme280);
+    BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+
+    while (true)
     {
-        ret = bme280_init(&bme280);
+        ret = bh1750.powerOnMode(true);
+        ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+
+        ret = bh1750.setMeasurementMode(illuminanceResolution, true);
+        ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+
+        ulp_lp_core_delay_us(1000 * illuminanceMeasurementTimeMs);
+
+        ret = bh1750.readMeasurement(illuminanceReading);
+        ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+
+        ret = bme280_set_sensor_mode(BME280_POWERMODE_FORCED, &bme280);
         BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
 
-        // Always read the current settings before writing, especially when all the configuration is not modified
-        ret = bme280_get_sensor_settings(&settings, &bme280);
+        ret = bme280_cal_meas_delay(&bme280MeasurementTimeUs, &settings);
         BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
 
-        // Configuring the over-sampling mode, filter coefficient and output data rate
-        // Overwrite the desired settings
-        settings.filter = BME280_FILTER_COEFF_OFF;
-        settings.osr_h = BME280_OVERSAMPLING_1X;
-        settings.osr_t = BME280_OVERSAMPLING_1X;
-        settings.osr_p = BME280_OVERSAMPLING_1X;
-        settings.standby_time = BME280_STANDBY_TIME_0_5_MS;
+        ulp_lp_core_delay_us(bme280MeasurementTimeUs);
 
-        ret = bme280_set_sensor_settings(BME280_SEL_ALL_SETTINGS, &settings, &bme280);
+        ret = bme280_get_sensor_data(BME280_ALL, &measurement, &bme280);
         BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
 
-        needsInit = false;
-    }
-
-    ret = bh1750.powerOnMode(true);
-    ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
-
-    ret = bh1750.setMeasurementMode(illuminanceResolution, true);
-    ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
-
-    ulp_lp_core_delay_us(1000 * illuminanceMeasurementTimeMs);
-
-    ret = bh1750.readMeasurement(illuminanceReading);
-    ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
-
-    ret = bme280_set_sensor_mode(BME280_POWERMODE_FORCED, &bme280);
-    BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
-
-    ret = bme280_cal_meas_delay(&bme280MeasurementTimeUs, &settings);
-    BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
-
-    ulp_lp_core_delay_us(bme280MeasurementTimeUs);
-
-    ret = bme280_get_sensor_data(BME280_ALL, &measurement, &bme280);
-    BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
-
-// Synchronize sensor data for main core
+        // Synchronize sensor data for main core
 #ifndef BME280_DOUBLE_ENABLE
-    temperature = measurement.temperature;
-    pressure = measurement.pressure / 100;
-    humidity = measurement.humidity / 1000;
+        temperature = measurement.temperature;
+        pressure = measurement.pressure / 100;
+        humidity = measurement.humidity / 1000;
 #else
-    temperature = measurement.temperature;
-    pressure = measurement.pressure;
-    humidity = measurement.humidity;
+        temperature = measurement.temperature;
+        pressure = measurement.pressure;
+        humidity = measurement.humidity;
 #endif
-    illuminance = static_cast<uint32_t>(illuminanceReading);
+        illuminance = static_cast<uint32_t>(illuminanceReading);
 
-    synchronisation = 1;
-    ulp_lp_core_wakeup_main_processor();
+        synchronisation = 1;
+
+        ulp_lp_core_wakeup_main_processor();
+
+        ulp_lp_core_delay_us(1000 * 1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS);
+    }
 
     return 0;
 
