@@ -21,6 +21,8 @@ idf_component_register(
         "ui/fonts/lv_font_montserrat_8_german.c"
         "ui/icons/drop.c"
         "ui/icons/sun.c"
+        "ui/backlight.cpp"
+        "ui/backlight.hpp"
         "ui/task_ui.cpp"
         "ui/task_ui.hpp"
         "ui/ui_task_interface.hpp"

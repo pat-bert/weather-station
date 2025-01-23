@@ -1,5 +1,7 @@
 #include "task_ui.hpp"
 
+#include "backlight.hpp"
+
 #include "interface_sensor.hpp"
 
 #include "st7735/esp_lcd_panel_custom_vendor.h"
@@ -541,6 +543,9 @@ void task_lvgl(void *arg)
     lvgl_create_ui(uiTaskInterface);
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
+    Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, CONFIG_LCD_BACKLIGHT_HZ, 13};
+    backlight.init();
+
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
 
     int32_t temperatureAverageLastHourCentigrade{0};
@@ -562,6 +567,8 @@ void task_lvgl(void *arg)
             task_delay_ms = LVGL_TASK_MIN_DELAY_MS;
         }
 
+        backlight.dim(0, 15000);
+
         // Since no animations need to run frequently this task can wait for sensor data to update the UI
         // using xQueueReceive instead of yielding to a second task using vTaskDelay
         QueueValueType queueData{};
@@ -582,9 +589,10 @@ void task_lvgl(void *arg)
             {
                 lv_label_set_text(uiTaskInterface->m_timeLabel, timeStringBuffer);
             }
-
             if (std::holds_alternative<ButtonData>(queueData))
             {
+                backlight.stopFade();
+                backlight.dim(100);
                 ButtonData &buttonData = std::get<ButtonData>(queueData);
                 if (buttonData.m_tabviewButtonPressed && (uiTaskInterface->m_tabview != nullptr))
                 {

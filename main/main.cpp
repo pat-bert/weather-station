@@ -1,5 +1,3 @@
-#include "driver/ledc.h"
-
 #include "esp_log.h"
 #include "esp_pm.h"
 #include "esp_sleep.h"
@@ -82,39 +80,13 @@ static void initButton(UiTaskInterface &uiTaskInterface)
     ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_LONG_PRESS_HOLD, factoryResetCallback, nullptr));
 }
 
-#define LEDC_OUTPUT_IO (8)    // Define the output GPIO
-#define LEDC_FREQUENCY (4000) // Frequency in Hertz. Set frequency at 4 kHz
-
-static void initLcdBackLight()
-{
-    // Prepare and then apply the LEDC PWM timer configuration
-    ledc_timer_config_t ledc_timer{};
-    ledc_timer.speed_mode = LEDC_LOW_SPEED_MODE;
-    ledc_timer.timer_num = LEDC_TIMER_0;
-    ledc_timer.duty_resolution = LEDC_TIMER_13_BIT;
-    ledc_timer.freq_hz = LEDC_FREQUENCY; // Set output frequency at 4 kH
-    ledc_timer.clk_cfg = LEDC_AUTO_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
-
-    // Prepare and then apply the LEDC PWM channel configuration
-    ledc_channel_config_t ledc_channel{};
-    ledc_channel.speed_mode = LEDC_LOW_SPEED_MODE;
-    ledc_channel.channel = LEDC_CHANNEL_0;
-    ledc_channel.timer_sel = LEDC_TIMER_0;
-    ledc_channel.intr_type = LEDC_INTR_DISABLE;
-    ledc_channel.gpio_num = LEDC_OUTPUT_IO;
-    ledc_channel.duty = (1ULL << 13);
-    ledc_channel.hpoint = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
-}
-
 #if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
 esp_err_t initLpCoreI2C()
 {
     lp_core_i2c_cfg_t busConfigLpCore{};
-    busConfigLpCore.i2c_pin_cfg.scl_io_num = GPIO_NUM_7;
+    busConfigLpCore.i2c_pin_cfg.scl_io_num = static_cast<gpio_num_t>(CONFIG_SCL_LP_GPIO);
     busConfigLpCore.i2c_pin_cfg.scl_pullup_en = false;
-    busConfigLpCore.i2c_pin_cfg.sda_io_num = GPIO_NUM_6;
+    busConfigLpCore.i2c_pin_cfg.sda_io_num = static_cast<gpio_num_t>(CONFIG_SDA_LP_GPIO);
     busConfigLpCore.i2c_pin_cfg.sda_pullup_en = false;
     busConfigLpCore.i2c_src_clk = LP_I2C_SCLK_DEFAULT;
     busConfigLpCore.i2c_timing_cfg.clk_speed_hz = std::min(CONFIG_BME_I2C_CLOCK_KHZ, CONFIG_BH1750_I2C_CLOCK_KHZ) * 1000U;
@@ -123,10 +95,9 @@ esp_err_t initLpCoreI2C()
 
 static void init_ulp_program(void)
 {
-    initLpCoreI2C();
+    ESP_ERROR_CHECK(initLpCoreI2C());
 
-    esp_err_t err = ulp_lp_core_load_binary(ulp_lp_sensor_bin_start, (ulp_lp_sensor_bin_end - ulp_lp_sensor_bin_start));
-    ESP_ERROR_CHECK(err);
+    ESP_ERROR_CHECK(ulp_lp_core_load_binary(ulp_lp_sensor_bin_start, (ulp_lp_sensor_bin_end - ulp_lp_sensor_bin_start)));
 
     /* Start the program */
     ulp_lp_core_cfg_t cfg{};
@@ -136,13 +107,11 @@ static void init_ulp_program(void)
     // When using LP timer wake-up the LP-core starts with the specified delay instead of immediately
     // which means that the ulp_* variables are still uninitialized and accessing them from the HP core results in an exception
 
-    err = ulp_lp_core_run(&cfg);
-    ESP_ERROR_CHECK(err);
+    ESP_ERROR_CHECK(ulp_lp_core_run(&cfg));
 }
 
 static void lightSleepExitCallback(void *arg)
 {
-    // pmu_ll_hp_clear_sw_intr_status(&PMU);
     SensorTaskInterface *sensorTaskInterface = static_cast<SensorTaskInterface *>(arg);
 
     if (ulp_synchronisation)
@@ -209,9 +178,11 @@ extern "C" void app_main(void)
     {
 #if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
         ESP_LOGI(TAG, "Not an LP core wakeup. Cause = %d", cause);
-        // ESP_ERROR_CHECK(esp_intr_alloc_intrstatus(ETS_PMU_INTR_SOURCE, 0, INTMTX_CORE0_INT_STATUS_0, (1ULL << 13), lightSleepExitCallback, static_cast<void *>(&sensorTaskInterface), nullptr));
-        // ESP_ERROR_CHECK(esp_intr_dump(stdout));
-        
+
+        // intr_handle_t interruptHandle{};
+        // ESP_ERROR_CHECK(esp_intr_alloc_intrstatus(ETS_PMU_INTR_SOURCE, 0, PMU_HP_LP_CPU_COMM_REG, PMU_LP_TRIGGER_HP, lightSleepExitCallback, static_cast<void *>(&sensorTaskInterface), &interruptHandle));
+        // ESP_ERROR_CHECK(esp_intr_enable(interruptHandle));
+        // esp_intr_enable_source(ETS_PMU_INTR_SOURCE);
         ESP_ERROR_CHECK(esp_sleep_enable_ulp_wakeup());
 
         /* Load LP Core binary and start the coprocessor */
@@ -238,23 +209,21 @@ extern "C" void app_main(void)
 
     initButton(uiTaskInterface);
 
-    initLcdBackLight();
-
     esp_pm_sleep_cbs_register_config_t sleepCallbackConfig{};
     sleepCallbackConfig.exit_cb = lightSleepExitCallback2;
     sleepCallbackConfig.exit_cb_user_arg = static_cast<void *>(&sensorTaskInterface);
     esp_pm_light_sleep_register_cbs(&sleepCallbackConfig);
 
-    // while (true)
-    // {
-    //     if (ulp_synchronisation)
-    //     {
-    //         ESP_LOGI(TAG, "Synchronized from lp core!");
-    //         lightSleepExitCallback(static_cast<void *>(&sensorTaskInterface));
-    //     }
+    while (true)
+    {
+        if (ulp_synchronisation)
+        {
+            ESP_LOGI(TAG, "Synchronized from lp core!");
+            lightSleepExitCallback(static_cast<void *>(&sensorTaskInterface));
+        }
 
-    //     vTaskDelay(pdMS_TO_TICKS(200));
-    // }
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
 
     vTaskSuspend(nullptr);
 }

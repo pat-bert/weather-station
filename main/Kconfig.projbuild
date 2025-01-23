@@ -60,6 +60,13 @@ menu "Display"
         help
             GPIO number (IOxx) to select writing data or commands to the LCD
 
+    config LCD_BACKLIGHT_GPIO
+        int "LCD Backlight GPIO number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
+        default 8
+        help
+            GPIO number (IOxx) to dim the backlight of the LCD
+
     config LCD_SPI_HOST
         int "LCD SPI host number"
         range 0 2
@@ -69,6 +76,10 @@ menu "Display"
             0: SPI_HOST    SPI1_HOST
             1: HSPI_HOST   SPI2_HOST
             2: VSPI_HOST   SPI3_HOST
+    
+    config LCD_BACKLIGHT_HZ
+        int "LCD backlight PWM frequency (Hz)"
+        default 4000
 
 endmenu
 
@@ -88,6 +99,20 @@ menu "Sensors"
         int "Sensor I2C clock GPIO number"
         range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
         default 22
+        help
+            GPIO number (IOxx) for the I2C clock signal for the sensor
+
+    config SDA_LP_GPIO
+        int "Sensor I2C data GPIO number (LP-core)"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
+        default 6
+        help
+            GPIO number (IOxx) for exchanging data via I2C with sensor
+
+    config SCL_LP_GPIO
+        int "Sensor I2C clock GPIO number (LP-core)"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
+        default 7
         help
             GPIO number (IOxx) for the I2C clock signal for the sensor
             
