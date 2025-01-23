@@ -545,6 +545,7 @@ void task_lvgl(void *arg)
 
     Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, CONFIG_LCD_BACKLIGHT_HZ, 13};
     backlight.init();
+    backlight.power(true);
 
     uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
 
@@ -566,8 +567,6 @@ void task_lvgl(void *arg)
         {
             task_delay_ms = LVGL_TASK_MIN_DELAY_MS;
         }
-
-        backlight.dim(0, 15000);
 
         // Since no animations need to run frequently this task can wait for sensor data to update the UI
         // using xQueueReceive instead of yielding to a second task using vTaskDelay
@@ -682,6 +681,8 @@ void task_lvgl(void *arg)
                     }
                 }
             }
+
+            backlight.dim(0, 15000);
             ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
         }
     }

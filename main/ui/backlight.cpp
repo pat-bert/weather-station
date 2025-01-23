@@ -37,17 +37,18 @@ void Backlight::power(bool isOn)
     dim(isOn ? 100 : 0);
 }
 
-void Backlight::dim(int percentage, int fadeTimeMs)
+void Backlight::dim(unsigned int percentage, int fadeTimeMs)
 {
+    const uint32_t duty{(1UL << m_resolutionBits) * percentage / 100};
     if (fadeTimeMs == 0)
     {
-        ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(m_channel), (1ULL << m_resolutionBits) * percentage / 100));
+        ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(m_channel), duty));
         ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(m_channel)));
     }
     else
     {
         ESP_ERROR_CHECK(ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE,
-                                                static_cast<ledc_channel_t>(m_channel), 0, fadeTimeMs));
+                                                static_cast<ledc_channel_t>(m_channel), duty, fadeTimeMs));
         ESP_ERROR_CHECK(ledc_fade_start(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(m_channel), LEDC_FADE_NO_WAIT));
     }
 }

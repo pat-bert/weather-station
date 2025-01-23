@@ -15,7 +15,7 @@ public:
 
     void init();
     void power(bool isOn);
-    void dim(int percentage, int fadeTimeMs = 0);
+    void dim(unsigned int percentage, int fadeTimeMs = 0);
     void stopFade();
 
 private:

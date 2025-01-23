@@ -27,7 +27,6 @@
 
 #include <algorithm>
 
-// FreeRTOS
 #define STACK_SIZE_SENSOR_TASK (3000)
 #define LVGL_TASK_STACK_SIZE (5500)
 #define SNTP_TASK_STACK_SIZE (4000)
@@ -99,10 +98,8 @@ static void init_ulp_program(void)
 
     ESP_ERROR_CHECK(ulp_lp_core_load_binary(ulp_lp_sensor_bin_start, (ulp_lp_sensor_bin_end - ulp_lp_sensor_bin_start)));
 
-    /* Start the program */
     ulp_lp_core_cfg_t cfg{};
     cfg.wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU;
-    // cfg.lp_timer_sleep_duration_us = 1000 * 1000 * 10; // CONFIG_MEASUREMENT_INTERVAL_SECONDS;
 
     // When using LP timer wake-up the LP-core starts with the specified delay instead of immediately
     // which means that the ulp_* variables are still uninitialized and accessing them from the HP core results in an exception
@@ -112,12 +109,15 @@ static void init_ulp_program(void)
 
 static void lightSleepExitCallback(void *arg)
 {
-    SensorTaskInterface *sensorTaskInterface = static_cast<SensorTaskInterface *>(arg);
+    // Clear the interrupt bit
+    REG_SET_BIT(PMU_HP_INT_CLR_REG, PMU_SW_INT_CLR);
 
     if (ulp_synchronisation)
     {
-        ulp_synchronisation = 0;
+        SensorTaskInterface *sensorTaskInterface = static_cast<SensorTaskInterface *>(arg);
         SensorData sensorData{};
+
+        ulp_synchronisation = 0;
 
         sensorData.m_illuminance = ulp_illuminance;
         sensorData.m_humidity = ulp_humidity;
@@ -128,32 +128,6 @@ static void lightSleepExitCallback(void *arg)
         BaseType_t pxHigherPriorityTaskWoken{pdFALSE};
         xQueueSendFromISR(sensorTaskInterface->m_measurementQueue_out, &queueData, &pxHigherPriorityTaskWoken);
     }
-}
-
-static esp_err_t lightSleepExitCallback2(int64_t sleep_time_us, void *arg)
-{
-    // pmu_ll_hp_clear_sw_intr_status(&PMU);
-    SensorTaskInterface *sensorTaskInterface = static_cast<SensorTaskInterface *>(arg);
-
-    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_ULP)
-    {
-        if (ulp_synchronisation)
-        {
-            ulp_synchronisation = 0;
-            SensorData sensorData{};
-
-            sensorData.m_illuminance = ulp_illuminance;
-            sensorData.m_humidity = ulp_humidity;
-            sensorData.m_temperature = static_cast<int32_t>(ulp_temperature);
-            sensorData.m_pressure = ulp_pressure;
-
-            QueueValueType queueData{sensorData};
-            BaseType_t pxHigherPriorityTaskWoken{pdFALSE};
-            xQueueSendFromISR(sensorTaskInterface->m_measurementQueue_out, &queueData, &pxHigherPriorityTaskWoken);
-        }
-    }
-
-    return ESP_OK;
 }
 
 #endif
@@ -179,13 +153,16 @@ extern "C" void app_main(void)
 #if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
         ESP_LOGI(TAG, "Not an LP core wakeup. Cause = %d", cause);
 
-        // intr_handle_t interruptHandle{};
-        // ESP_ERROR_CHECK(esp_intr_alloc_intrstatus(ETS_PMU_INTR_SOURCE, 0, PMU_HP_LP_CPU_COMM_REG, PMU_LP_TRIGGER_HP, lightSleepExitCallback, static_cast<void *>(&sensorTaskInterface), &interruptHandle));
-        // ESP_ERROR_CHECK(esp_intr_enable(interruptHandle));
-        // esp_intr_enable_source(ETS_PMU_INTR_SOURCE);
+        // Allocate and enable interrupt on signal from LP-core
+        intr_handle_t interruptHandle{};
+        ESP_ERROR_CHECK(esp_intr_alloc_intrstatus(ETS_PMU_INTR_SOURCE, 0, PMU_HP_INT_ST_REG, PMU_SW_INT_ST, lightSleepExitCallback, static_cast<void *>(&sensorTaskInterface), &interruptHandle));
+        ESP_ERROR_CHECK(esp_intr_enable(interruptHandle));
+        REG_SET_BIT(PMU_HP_INT_ENA_REG, PMU_SW_INT_ENA);
+
+        // Enable wake-up
         ESP_ERROR_CHECK(esp_sleep_enable_ulp_wakeup());
 
-        /* Load LP Core binary and start the coprocessor */
+        // Load LP Core binary and start the coprocessor
         init_ulp_program();
 #endif
     }
@@ -208,22 +185,6 @@ extern "C" void app_main(void)
     configASSERT(xHandleSntp);
 
     initButton(uiTaskInterface);
-
-    esp_pm_sleep_cbs_register_config_t sleepCallbackConfig{};
-    sleepCallbackConfig.exit_cb = lightSleepExitCallback2;
-    sleepCallbackConfig.exit_cb_user_arg = static_cast<void *>(&sensorTaskInterface);
-    esp_pm_light_sleep_register_cbs(&sleepCallbackConfig);
-
-    while (true)
-    {
-        if (ulp_synchronisation)
-        {
-            ESP_LOGI(TAG, "Synchronized from lp core!");
-            lightSleepExitCallback(static_cast<void *>(&sensorTaskInterface));
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
 
     vTaskSuspend(nullptr);
 }
