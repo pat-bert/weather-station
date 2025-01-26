@@ -42,8 +42,8 @@ The user can change between the currently displayed screens by a single short cl
 
 - [x] Implement averaging for correct 24 h history instead of 24 min
 - [x] Read sensors using LP core
-- [ ] Sleep display and turn off backlight after n seconds of user inactivity
-- [ ] Wake display based on button
+- [x] Sleep display and turn off backlight after n seconds of user inactivity
+- [x] Wake display based on button
 - [ ] Wake display based on proximity reading from time-of-flight sensor
 - [ ] Deep sleep HP core
 - [ ] Re-evaluate power usage with Firebeetle
@@ -64,9 +64,13 @@ GPIO-Pin-Number|Function
 ---|--------
 1  | LCD Reset
 2  | User Push-Button  
-6  | LCD SPI Clock
-7  | LCD SPI Master-out-Slave-in
+6  | I²C data when LP-core is enabled
+7  | I²C clock when LP-core is enabled
 16 | LCD Chip Select
 18 | LCD Data/Command Select
-19 | I²C data
-20 | I²C clock
+19 | I²C data when LP-core is disabled
+20 | I²C clock when LP-core is disabled
+22 | LCD SPI Master-out-Slave-in
+23 | LCD SPI Clock
+
+A 4.7k pull-up resistor should be placed on the I²C pin as well as the LCD reset pin.

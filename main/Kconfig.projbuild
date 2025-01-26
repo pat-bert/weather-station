@@ -79,7 +79,7 @@ menu "Display"
     
     config LCD_BACKLIGHT_HZ
         int "LCD backlight PWM frequency (Hz)"
-        default 4000
+        default 2000
 
 endmenu
 

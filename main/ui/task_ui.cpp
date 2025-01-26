@@ -543,7 +543,7 @@ void task_lvgl(void *arg)
     lvgl_create_ui(uiTaskInterface);
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
-    Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, CONFIG_LCD_BACKLIGHT_HZ, 13};
+    Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, 2000, 12};
     backlight.init();
     backlight.power(true);
 
@@ -608,8 +608,11 @@ void task_lvgl(void *arg)
             {
                 WifiData &wifiData = std::get<WifiData>(queueData);
 
-                lv_qrcode_update(uiTaskInterface->m_provisioningQrCode, wifiData.m_provisioningPayload, std::strlen(wifiData.m_provisioningPayload));
-                lv_obj_remove_flag(uiTaskInterface->m_provisioningQrCode, LV_OBJ_FLAG_HIDDEN);
+                if (uiTaskInterface->m_provisioningQrCode != nullptr)
+                {
+                    lv_qrcode_update(uiTaskInterface->m_provisioningQrCode, wifiData.m_provisioningPayload, std::strlen(wifiData.m_provisioningPayload));
+                    lv_obj_remove_flag(uiTaskInterface->m_provisioningQrCode, LV_OBJ_FLAG_HIDDEN);
+                }
             }
             else if (std::holds_alternative<SensorData>(queueData))
             {

@@ -15,7 +15,7 @@ void Backlight::init()
     ledc_timer.timer_num = timer;
     ledc_timer.duty_resolution = static_cast<ledc_timer_bit_t>(m_resolutionBits);
     ledc_timer.freq_hz = m_pwmFrequency;
-    ledc_timer.clk_cfg = LEDC_AUTO_CLK;
+    ledc_timer.clk_cfg = LEDC_USE_RC_FAST_CLK;
     ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
 
     // Prepare and then apply the LEDC PWM channel configuration
@@ -27,6 +27,7 @@ void Backlight::init()
     ledc_channel.gpio_num = m_gpioNumber;
     ledc_channel.duty = 0;
     ledc_channel.hpoint = 0;
+    ledc_channel.sleep_mode = LEDC_SLEEP_MODE_KEEP_ALIVE;
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
 
     ESP_ERROR_CHECK(ledc_fade_func_install(0));

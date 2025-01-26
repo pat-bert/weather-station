@@ -44,15 +44,18 @@ static void IRAM_ATTR factoryResetCallback(void *button_handle, void *usr_data)
 
 static void IRAM_ATTR changeActiveTabCallback(void *button_handle, void *usr_data)
 {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
     UiTaskInterface *uiTaskInterface = static_cast<UiTaskInterface *>(usr_data);
 
-    ButtonData buttonData{};
-    buttonData.m_tabviewButtonPressed = true;
+    if (uiTaskInterface != nullptr)
+    {
+        ButtonData buttonData{};
+        buttonData.m_tabviewButtonPressed = true;
 
-    QueueValueType queueData{buttonData};
-
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    xQueueSendFromISR(uiTaskInterface->m_measurementQueue_in, &queueData, &xHigherPriorityTaskWoken);
+        QueueValueType queueData{buttonData};
+        xQueueSendFromISR(uiTaskInterface->m_measurementQueue_in, &queueData, &xHigherPriorityTaskWoken);
+    }
 
     if (xHigherPriorityTaskWoken)
     {
@@ -179,12 +182,12 @@ extern "C" void app_main(void)
     xTaskCreate(task_lvgl, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleDisplay);
     configASSERT(xHandleDisplay);
 
+    initButton(uiTaskInterface);
+
     WifiTaskInterface wifiTaskInterface{measurementQueue};
     TaskHandle_t xHandleSntp{nullptr};
     xTaskCreate(task_sntp, "sntp", SNTP_TASK_STACK_SIZE, static_cast<void *>(&wifiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSntp);
     configASSERT(xHandleSntp);
-
-    initButton(uiTaskInterface);
 
     vTaskSuspend(nullptr);
 }
