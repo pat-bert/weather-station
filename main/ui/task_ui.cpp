@@ -543,7 +543,7 @@ void task_lvgl(void *arg)
     lvgl_create_ui(uiTaskInterface);
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
-    Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, 2000};
+    Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, CONFIG_LCD_BACKLIGHT_HZ};
     backlight.init();
     backlight.power(true);
 
@@ -685,7 +685,7 @@ void task_lvgl(void *arg)
                 }
             }
 
-            backlight.dim(0, 15000);
+            backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
             ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
         }
     }

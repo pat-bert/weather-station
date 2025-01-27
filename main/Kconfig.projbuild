@@ -81,6 +81,10 @@ menu "Display"
         int "LCD backlight PWM frequency (Hz)"
         default 2000
 
+    config LCD_FADE_TIME_SECONDS
+        int "LCD backlight fading transition time (s)"
+        default 15
+
 endmenu
 
 menu "Sensors"
