@@ -6,8 +6,8 @@
 class Backlight
 {
 public:
-    Backlight(int32_t gpioNumber, uint32_t pwmFrequency, uint8_t resolutionBits) : m_gpioNumber{gpioNumber},
-                                                                                   m_pwmFrequency{pwmFrequency}, m_resolutionBits{resolutionBits}
+    Backlight(int32_t gpioNumber, uint32_t pwmFrequency) : m_gpioNumber{gpioNumber},
+                                                           m_pwmFrequency{pwmFrequency}
     {
         m_channel = m_nextChannel;
         ++m_nextChannel;
@@ -23,7 +23,6 @@ private:
 
     int32_t m_gpioNumber;
     uint32_t m_pwmFrequency;
-    uint8_t m_resolutionBits;
     uint8_t m_channel;
 };
 
