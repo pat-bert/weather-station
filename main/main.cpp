@@ -102,7 +102,8 @@ static void init_ulp_program(void)
     ESP_ERROR_CHECK(ulp_lp_core_load_binary(ulp_lp_sensor_bin_start, (ulp_lp_sensor_bin_end - ulp_lp_sensor_bin_start)));
 
     ulp_lp_core_cfg_t cfg{};
-    cfg.wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU;
+    cfg.wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_LP_TIMER | ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU;
+    cfg.lp_timer_sleep_duration_us = 1000 * 1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS;
 
     // When using LP timer wake-up the LP-core starts with the specified delay instead of immediately
     // which means that the ulp_* variables are still uninitialized and accessing them from the HP core results in an exception
@@ -115,22 +116,17 @@ static void lightSleepExitCallback(void *arg)
     // Clear the interrupt bit
     REG_SET_BIT(PMU_HP_INT_CLR_REG, PMU_SW_INT_CLR);
 
-    if (ulp_synchronisation)
-    {
-        SensorTaskInterface *sensorTaskInterface = static_cast<SensorTaskInterface *>(arg);
-        SensorData sensorData{};
+    SensorTaskInterface *sensorTaskInterface = static_cast<SensorTaskInterface *>(arg);
+    SensorData sensorData{};
 
-        ulp_synchronisation = 0;
+    sensorData.m_illuminance = ulp_illuminance;
+    sensorData.m_humidity = ulp_humidity;
+    sensorData.m_temperature = static_cast<int32_t>(ulp_temperature);
+    sensorData.m_pressure = ulp_pressure;
 
-        sensorData.m_illuminance = ulp_illuminance;
-        sensorData.m_humidity = ulp_humidity;
-        sensorData.m_temperature = static_cast<int32_t>(ulp_temperature);
-        sensorData.m_pressure = ulp_pressure;
-
-        QueueValueType queueData{sensorData};
-        BaseType_t pxHigherPriorityTaskWoken{pdFALSE};
-        xQueueSendFromISR(sensorTaskInterface->m_measurementQueue_out, &queueData, &pxHigherPriorityTaskWoken);
-    }
+    QueueValueType queueData{sensorData};
+    BaseType_t pxHigherPriorityTaskWoken{pdFALSE};
+    xQueueSendFromISR(sensorTaskInterface->m_measurementQueue_out, &queueData, &pxHigherPriorityTaskWoken);
 }
 
 #endif

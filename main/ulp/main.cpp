@@ -36,7 +36,6 @@ volatile uint32_t illuminance = 0;
 volatile uint32_t pressure = 0;
 volatile int32_t temperature = 0;
 volatile uint32_t humidity = 0;
-volatile uint32_t synchronisation = 0;
 
 static BME280_INTF_RET_TYPE bme280_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t length, void *intf_ptr)
 {
@@ -122,48 +121,41 @@ extern "C" int main(void)
     ret = bme280_set_sensor_settings(BME280_SEL_ALL_SETTINGS, &settings, &bme280);
     BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
 
-    while (true)
-    {
-        ret = bh1750.powerOnMode(true);
-        ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+    ret = bh1750.powerOnMode(true);
+    ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
 
-        ret = bh1750.setMeasurementMode(illuminanceResolution, true);
-        ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+    ret = bh1750.setMeasurementMode(illuminanceResolution, true);
+    ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
 
-        ulp_lp_core_delay_us(1000 * illuminanceMeasurementTimeMs);
+    ulp_lp_core_delay_us(1000 * illuminanceMeasurementTimeMs);
 
-        ret = bh1750.readMeasurement(illuminanceReading);
-        ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+    ret = bh1750.readMeasurement(illuminanceReading);
+    ESP_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
 
-        ret = bme280_set_sensor_mode(BME280_POWERMODE_FORCED, &bme280);
-        BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+    ret = bme280_set_sensor_mode(BME280_POWERMODE_FORCED, &bme280);
+    BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
 
-        ret = bme280_cal_meas_delay(&bme280MeasurementTimeUs, &settings);
-        BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+    ret = bme280_cal_meas_delay(&bme280MeasurementTimeUs, &settings);
+    BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
 
-        ulp_lp_core_delay_us(bme280MeasurementTimeUs);
+    ulp_lp_core_delay_us(bme280MeasurementTimeUs);
 
-        ret = bme280_get_sensor_data(BME280_ALL, &measurement, &bme280);
-        BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
+    ret = bme280_get_sensor_data(BME280_ALL, &measurement, &bme280);
+    BOSCH_LP_GOTO_ON_ERROR(ret, err, "%d", ret);
 
-        // Synchronize sensor data for main core
+    // Synchronize sensor data for main core
 #ifndef BME280_DOUBLE_ENABLE
-        temperature = measurement.temperature;
-        pressure = measurement.pressure / 100;
-        humidity = measurement.humidity / 1000;
+    temperature = measurement.temperature;
+    pressure = measurement.pressure / 100;
+    humidity = measurement.humidity / 1000;
 #else
-        temperature = measurement.temperature;
-        pressure = measurement.pressure;
-        humidity = measurement.humidity;
+    temperature = measurement.temperature;
+    pressure = measurement.pressure;
+    humidity = measurement.humidity;
 #endif
-        illuminance = static_cast<uint32_t>(illuminanceReading);
+    illuminance = static_cast<uint32_t>(illuminanceReading);
 
-        synchronisation = 1;
-
-        ulp_lp_core_wakeup_main_processor();
-
-        ulp_lp_core_delay_us(1000 * 1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS);
-    }
+    ulp_lp_core_wakeup_main_processor();
 
     return 0;
 
