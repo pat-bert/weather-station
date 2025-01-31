@@ -455,7 +455,7 @@ static bool screenModified{false};
 
 static void lvgl_flush_cb(lv_display_t *display, const lv_area_t *area, unsigned char *color_map)
 {
-    esp_lcd_panel_handle_t panel_handle = static_cast<esp_lcd_panel_handle_t>(lv_display_get_user_data(display));
+    esp_lcd_panel_handle_t panelHandle = static_cast<esp_lcd_panel_handle_t>(lv_display_get_user_data(display));
     int offsetx1 = area->x1;
     int offsetx2 = area->x2;
     int offsety1 = area->y1;
@@ -463,7 +463,7 @@ static void lvgl_flush_cb(lv_display_t *display, const lv_area_t *area, unsigned
 
     // swap upper and lower bytes of 16 bit color values due to endianness
     lv_draw_sw_rgb565_swap(color_map, lv_area_get_size(area));
-    esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
+    esp_lcd_panel_draw_bitmap(panelHandle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
     screenModified = true;
 }
 
@@ -495,16 +495,16 @@ esp_lcd_panel_handle_t initPanel(void *callbackData)
     // Attach the LCD to the SPI bus
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(static_cast<spi_host_device_t>(CONFIG_LCD_SPI_HOST), &io_config, &io_handle));
 
-    esp_lcd_panel_handle_t panel_handle = nullptr;
+    esp_lcd_panel_handle_t panelHandle = nullptr;
     esp_lcd_panel_dev_config_t panel_config{};
     panel_config.reset_gpio_num = CONFIG_LCD_RST_GPIO;
     panel_config.rgb_endian = LCD_RGB_ENDIAN_RGB;
     panel_config.bits_per_pixel = 16;
 
     // Create LCD panel handle for ST7735, with the SPI IO device handle
-    ESP_ERROR_CHECK(esp_lcd_new_panel_st7735(io_handle, &panel_config, &panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_new_panel_st7735(io_handle, &panel_config, &panelHandle));
 
-    return panel_handle;
+    return panelHandle;
 }
 
 void IRAM_ATTR increase_lvgl_tick(void)
@@ -527,13 +527,13 @@ void task_lvgl(void *arg)
     lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565);
 
     FlushCallbackData callbackData{xSemaphore, display};
-    esp_lcd_panel_handle_t panel_handle = initPanel(static_cast<void *>(&callbackData));
+    esp_lcd_panel_handle_t panelHandle = initPanel(static_cast<void *>(&callbackData));
 
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, false));
-    ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, false));
-    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, true));
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(panelHandle));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(panelHandle));
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panelHandle, false));
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(panelHandle, true, false));
+    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panelHandle, true));
 
     ESP_ERROR_CHECK(esp_register_freertos_tick_hook_for_cpu(increase_lvgl_tick, xPortGetCoreID()));
     // alloc draw buffers used by LVGL
@@ -544,15 +544,15 @@ void task_lvgl(void *arg)
     void *buf2 = heap_caps_malloc(bufferSize, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     assert(buf2);
 
-    lv_display_set_user_data(display, static_cast<void *>(panel_handle));
+    lv_display_set_user_data(display, static_cast<void *>(panelHandle));
     lv_display_set_buffers(display, buf1, buf2, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(display, lvgl_flush_cb);
 
     UiTaskInterface *uiTaskInterface{static_cast<UiTaskInterface *>(arg)};
     lvgl_create_ui(uiTaskInterface);
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panelHandle, true));
 
-    Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, CONFIG_LCD_BACKLIGHT_HZ};
+    Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, CONFIG_LCD_BACKLIGHT_HZ, uiTaskInterface->m_measurementQueue_in};
     backlight.init();
     backlight.power(true);
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -607,12 +607,21 @@ void task_lvgl(void *arg)
                     lv_tabview_set_active(uiTaskInterface->m_tabview, next_tab, LV_ANIM_OFF);
                 }
 
-                esp_lcd_panel_disp_sleep(panel_handle, false);
+                esp_lcd_panel_disp_sleep(panelHandle, false);
                 backlight.init();
                 backlight.stopFade();
                 backlight.power(true);
                 vTaskDelay(pdMS_TO_TICKS(10));
                 backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
+            }
+            else if (std::holds_alternative<FadeData>(queueData))
+            {
+                FadeData &fadeData = std::get<FadeData>(queueData);
+                if (fadeData.m_requestLcdControllerOff)
+                {
+                    ESP_LOGI(TAG, "Turning off LCD controller");
+                    ESP_ERROR_CHECK(esp_lcd_panel_disp_sleep(panelHandle, true));
+                }
             }
             else if (std::holds_alternative<WifiData>(queueData))
             {

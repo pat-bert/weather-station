@@ -14,6 +14,11 @@ struct ButtonData
     bool m_tabviewButtonPressed;
 };
 
+struct FadeData
+{
+    bool m_requestLcdControllerOff;
+};
+
 struct SensorData
 {
 #ifdef BME280_DOUBLE_ENABLE
@@ -28,6 +33,6 @@ struct SensorData
     uint16_t m_illuminance;
 };
 
-using QueueValueType = std::variant<SensorData, ButtonData, WifiData>;
+using QueueValueType = std::variant<SensorData, ButtonData, WifiData, FadeData>;
 
 #endif

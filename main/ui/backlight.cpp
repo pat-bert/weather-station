@@ -1,8 +1,10 @@
 #include "backlight.hpp"
 
-#include "driver/ledc.h"
+#include "interfaces/interface_sensor.hpp"
 
+#include "driver/ledc.h"
 #include "esp_attr.h"
+#include "esp_lcd_panel_ops.h"
 
 constexpr ledc_mode_t speedMode{LEDC_LOW_SPEED_MODE};
 constexpr ledc_timer_t timer{LEDC_TIMER_0};
@@ -119,6 +121,7 @@ static const float gamma_correction_lut[101] = {
 
 static IRAM_ATTR bool fadeEndCallback(const ledc_cb_param_t *param, void *user_arg)
 {
+    BaseType_t pxHigherPriorityTaskWoken{pdFALSE};
     if (param->event == LEDC_FADE_END_EVT)
     {
         FadeCallbackData *fadeCallbackData{static_cast<FadeCallbackData *>(user_arg)};
@@ -138,11 +141,17 @@ static IRAM_ATTR bool fadeEndCallback(const ledc_cb_param_t *param, void *user_a
             ledc_timer.deconfigure = true;
             ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
 
+            FadeData fadeData{};
+            fadeData.m_requestLcdControllerOff = true;
+
+            QueueValueType queueData{fadeData};
+            xQueueSendFromISR(fadeCallbackData->m_queueHandle, &queueData, &pxHigherPriorityTaskWoken);
+
             fadeCallbackData->m_isBacklightInitialized = false;
         }
     }
 
-    return false;
+    return (pxHigherPriorityTaskWoken == pdPASS);
 }
 
 uint32_t gammaCorrection(uint32_t duty)
