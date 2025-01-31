@@ -48,7 +48,7 @@ Holding the push-button for seven seconds or longer will perform a factory reset
 - [x] Wake display based on button
 - [ ] Wake display based on proximity reading from time-of-flight sensor
 - [ ] Deep sleep HP core
-- [ ] Re-evaluate power usage with Firebeetle
+- [x] Re-evaluate power usage with Firebeetle
 - [ ] Measure air quality and/or CO2 content
 - [ ] Check feasibility of Matter integration, e.g. with Google Home to provide a warning based on humidity and temperature thresholds
 
@@ -76,3 +76,16 @@ GPIO-Pin-Number|Function
 23 | LCD SPI Clock
 
 A 4.7k pull-up resistor should be placed on the I²C pin as well as the LCD reset pin.
+
+## Power consumption
+
+Currently, the minimum power consumption is achieved when the LCD is faded off.
+The ESP32-C6 is then in light sleep mode, the LCD controller is sleeping (blank display).
+The low-power core wakes the high-power core every 60 seconds to update the sensor data.
+
+![alt text](PowerConsumptionLightSleep.BMP)
+
+Further possible optimizations include:
+
+- Entering deep sleep once display is faded off
+- Aggregate sensor values in LP-core to avoid wake-up
