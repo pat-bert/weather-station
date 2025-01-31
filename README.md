@@ -27,7 +27,9 @@ The Wi-Fi connection can be established by scanning the QR-code first displayed 
 
 Please keep in mind that this is a hobby project and neither is the flash currently encrypted nor are the provisioning credentials secret or unique per device.
 
-The user can change between the currently displayed screens by a single short click on the push-button. Holding the push-button for seven seconds or longer will perform a factory reset after which the Wi-Fi credentials are lost and the QR-code will be shown again.
+The LCD backlight is automatically dimmed over a parametrized duration using gamma fading. The backlight is turned on again and updated once the user short-clicks the push button. While the backlight is not fully dimmed off the user can change between the currently displayed screens by another short click on the push-button. This also aborts the fading and returns the LCD back to 100 % brightness.
+
+Holding the push-button for seven seconds or longer will perform a factory reset after which the Wi-Fi credentials are lost and the QR-code will be shown again.
 
 ## Configuration
 

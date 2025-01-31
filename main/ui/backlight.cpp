@@ -2,6 +2,8 @@
 
 #include "driver/ledc.h"
 
+#include "esp_attr.h"
+
 constexpr ledc_mode_t speedMode{LEDC_LOW_SPEED_MODE};
 constexpr ledc_timer_t timer{LEDC_TIMER_0};
 constexpr ledc_timer_bit_t resolution{LEDC_TIMER_12_BIT};
@@ -115,13 +117,44 @@ static const float gamma_correction_lut[101] = {
     1.000000,
 };
 
+static IRAM_ATTR bool fadeEndCallback(const ledc_cb_param_t *param, void *user_arg)
+{
+    if (param->event == LEDC_FADE_END_EVT)
+    {
+        FadeCallbackData *fadeCallbackData{static_cast<FadeCallbackData *>(user_arg)};
+        fadeCallbackData->m_isBacklightOn = param->duty > 0;
+
+        if (!(fadeCallbackData->m_isBacklightOn))
+        {
+            ledc_fade_func_uninstall();
+
+            ESP_ERROR_CHECK(ledc_timer_pause(static_cast<ledc_mode_t>(param->speed_mode), timer));
+
+            ledc_timer_config_t ledc_timer{};
+            ledc_timer.speed_mode = static_cast<ledc_mode_t>(param->speed_mode);
+            ledc_timer.timer_num = timer;
+            ledc_timer.deconfigure = true;
+            ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+            fadeCallbackData->m_isBacklightInitialized = false;
+        }
+    }
+
+    return false;
+}
+
 uint32_t gammaCorrection(uint32_t duty)
 {
     return gamma_correction_lut[duty * 100 / (1 << resolution)] * (1 << resolution);
-};
+}
 
 void Backlight::init()
 {
+    if (m_fadeCallbackData.m_isBacklightInitialized)
+    {
+        return;
+    }
+
     // Prepare and then apply the LEDC PWM timer configuration
     ledc_timer_config_t ledc_timer{};
     ledc_timer.speed_mode = speedMode;
@@ -144,6 +177,13 @@ void Backlight::init()
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
 
     ESP_ERROR_CHECK(ledc_fade_func_install(0));
+
+    ledc_cbs_t ledcCallbackConfig{};
+    ledcCallbackConfig.fade_cb = fadeEndCallback;
+
+    ESP_ERROR_CHECK(ledc_cb_register(speedMode, static_cast<ledc_channel_t>(m_channel), &ledcCallbackConfig, static_cast<void *>(&m_fadeCallbackData)));
+
+    m_fadeCallbackData.m_isBacklightInitialized = true;
 }
 
 void Backlight::power(bool isOn)
@@ -156,33 +196,43 @@ void Backlight::dim(unsigned int percentage, int fadeTimeMs)
     const uint32_t duty{(1UL << resolution) * percentage / 100};
     if (fadeTimeMs == 0)
     {
-        ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(m_channel), duty));
-        ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(m_channel)));
+        ESP_ERROR_CHECK(ledc_set_duty(speedMode, static_cast<ledc_channel_t>(m_channel), duty));
+        ESP_ERROR_CHECK(ledc_update_duty(speedMode, static_cast<ledc_channel_t>(m_channel)));
+        m_fadeCallbackData.m_isBacklightOn = percentage > 0;
     }
     else
     {
-        ESP_ERROR_CHECK(ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE,
-                                                static_cast<ledc_channel_t>(m_channel), duty, fadeTimeMs));
-
         const uint32_t linear_fade_segments = 12;
         uint32_t actual_fade_ranges;
         ledc_fade_param_config_t fade_params_list[SOC_LEDC_GAMMA_CURVE_FADE_RANGE_MAX] = {};
 
-        uint32_t startDuty{ledc_get_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(m_channel))};
+        uint32_t startDuty{ledc_get_duty(speedMode, static_cast<ledc_channel_t>(m_channel))};
 
-        ESP_ERROR_CHECK(ledc_fill_multi_fade_param_list(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(m_channel),
-                                                        startDuty, duty,
-                                                        linear_fade_segments, fadeTimeMs,
+        ESP_ERROR_CHECK(ledc_fill_multi_fade_param_list(speedMode,
+                                                        static_cast<ledc_channel_t>(m_channel),
+                                                        startDuty,
+                                                        duty,
+                                                        linear_fade_segments,
+                                                        fadeTimeMs,
                                                         gammaCorrection,
                                                         SOC_LEDC_GAMMA_CURVE_FADE_RANGE_MAX,
-                                                        fade_params_list, &actual_fade_ranges));
-        ESP_ERROR_CHECK(ledc_set_multi_fade(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(m_channel), gammaCorrection(startDuty), fade_params_list, actual_fade_ranges));
-
-        ESP_ERROR_CHECK(ledc_fade_start(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(m_channel), LEDC_FADE_NO_WAIT));
+                                                        fade_params_list,
+                                                        &actual_fade_ranges));
+        ESP_ERROR_CHECK(ledc_set_multi_fade_and_start(speedMode,
+                                                      static_cast<ledc_channel_t>(m_channel),
+                                                      gammaCorrection(startDuty),
+                                                      fade_params_list,
+                                                      actual_fade_ranges,
+                                                      LEDC_FADE_NO_WAIT));
     }
 }
 
 void Backlight::stopFade()
 {
-    ESP_ERROR_CHECK(ledc_fade_stop(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(m_channel)));
+    ESP_ERROR_CHECK(ledc_fade_stop(speedMode, static_cast<ledc_channel_t>(m_channel)));
+}
+
+bool Backlight::isOn()
+{
+    return m_fadeCallbackData.m_isBacklightOn;
 }

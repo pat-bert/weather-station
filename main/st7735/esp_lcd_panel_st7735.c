@@ -56,6 +56,7 @@ static esp_err_t panel_st7735_mirror(esp_lcd_panel_t *panel, bool mirror_x, bool
 static esp_err_t panel_st7735_swap_xy(esp_lcd_panel_t *panel, bool swap_axes);
 static esp_err_t panel_st7735_set_gap(esp_lcd_panel_t *panel, int x_gap, int y_gap);
 static esp_err_t panel_st7735_disp_on_off(esp_lcd_panel_t *panel, bool off);
+static esp_err_t panel_st7735_disp_sleep(esp_lcd_panel_t *panel, bool off);
 
 typedef struct
 {
@@ -133,6 +134,7 @@ esp_err_t esp_lcd_new_panel_st7735(const esp_lcd_panel_io_handle_t io, const esp
     st7735->base.mirror = panel_st7735_mirror;
     st7735->base.swap_xy = panel_st7735_swap_xy;
     st7735->base.disp_on_off = panel_st7735_disp_on_off;
+    st7735->base.disp_sleep = panel_st7735_disp_sleep;
     st7735->x_gap = 0;
     st7735->y_gap = 0;
     *ret_panel = &(st7735->base);
@@ -352,5 +354,22 @@ static esp_err_t panel_st7735_disp_on_off(esp_lcd_panel_t *panel, bool on_off)
         command = LCD_CMD_DISPOFF;
     }
     esp_lcd_panel_io_tx_param(io, command, NULL, 0);
+    return ESP_OK;
+}
+
+static esp_err_t panel_st7735_disp_sleep(esp_lcd_panel_t *panel, bool sleep)
+{
+    st7735_panel_t *st7735 = __containerof(panel, st7735_panel_t, base);
+    esp_lcd_panel_io_handle_t io = st7735->io;
+
+    if (sleep)
+    {
+        esp_lcd_panel_io_tx_param(io, LCD_CMD_SLPIN, NULL, 0);
+    }
+    else
+    {
+        esp_lcd_panel_io_tx_param(io, LCD_CMD_SLPOUT, NULL, 0);
+        vTaskDelay(pdMS_TO_TICKS(120));
+    }
     return ESP_OK;
 }

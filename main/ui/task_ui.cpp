@@ -431,12 +431,27 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
     }
 }
 
+struct FlushCallbackData
+{
+    QueueHandle_t m_semaphore;
+    lv_display_t *m_display;
+};
+
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
-    lv_display_t *display = static_cast<lv_display_t *>(user_ctx);
-    lv_display_flush_ready(display);
-    return false;
+    FlushCallbackData *callbackData = static_cast<FlushCallbackData *>(user_ctx);
+    lv_display_flush_ready(callbackData->m_display);
+
+    BaseType_t pxHigherPriorityTaskWoken{pdFALSE};
+    if (lv_display_flush_is_last(callbackData->m_display))
+    {
+        xSemaphoreGiveFromISR(callbackData->m_semaphore, &pxHigherPriorityTaskWoken);
+    }
+
+    return (pxHigherPriorityTaskWoken == pdPASS);
 }
+
+static bool screenModified{false};
 
 static void lvgl_flush_cb(lv_display_t *display, const lv_area_t *area, unsigned char *color_map)
 {
@@ -449,9 +464,10 @@ static void lvgl_flush_cb(lv_display_t *display, const lv_area_t *area, unsigned
     // swap upper and lower bytes of 16 bit color values due to endianness
     lv_draw_sw_rgb565_swap(color_map, lv_area_get_size(area));
     esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
+    screenModified = true;
 }
 
-void initSPI()
+esp_lcd_panel_handle_t initPanel(void *callbackData)
 {
     spi_bus_config_t buscfg{};
     buscfg.sclk_io_num = CONFIG_LCD_SCLK_GPIO;
@@ -462,11 +478,6 @@ void initSPI()
     buscfg.max_transfer_sz = LVGL_BUFFER_ELEMENTS * sizeof(uint16_t); // transfer x lines of pixels (assume pixel is RGB565) at most in one SPI transaction
 
     ESP_ERROR_CHECK(spi_bus_initialize(static_cast<spi_host_device_t>(CONFIG_LCD_SPI_HOST), &buscfg, SPI_DMA_CH_AUTO)); // Enable the DMA feature
-}
-
-esp_lcd_panel_io_handle_t initPanelIO(lv_display_t *display)
-{
-    initSPI();
 
     esp_lcd_panel_io_handle_t io_handle = nullptr;
     esp_lcd_panel_io_spi_config_t io_config{};
@@ -479,17 +490,11 @@ esp_lcd_panel_io_handle_t initPanelIO(lv_display_t *display)
     io_config.flags.sio_mode = 1; // only MOSI, no MISO
     io_config.trans_queue_depth = 2;
     io_config.on_color_trans_done = notify_lvgl_flush_ready;
-    io_config.user_ctx = display;
+    io_config.user_ctx = callbackData;
 
     // Attach the LCD to the SPI bus
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(static_cast<spi_host_device_t>(CONFIG_LCD_SPI_HOST), &io_config, &io_handle));
 
-    return io_handle;
-}
-
-esp_lcd_panel_handle_t initPanel(lv_display_t *display)
-{
-    esp_lcd_panel_io_handle_t io_handle = initPanelIO(display);
     esp_lcd_panel_handle_t panel_handle = nullptr;
     esp_lcd_panel_dev_config_t panel_config{};
     panel_config.reset_gpio_num = CONFIG_LCD_RST_GPIO;
@@ -512,13 +517,17 @@ void task_lvgl(void *arg)
     const char TAG[] = "lvgl";
     ESP_LOGI(TAG, "Starting LVGL task");
 
+    QueueHandle_t xSemaphore = xSemaphoreCreateBinary();
+
     ESP_LOGI(TAG, "Initialize LVGL library");
     lv_init();
 
     ESP_LOGI(TAG, "Install ST7735 panel driver");
     lv_display_t *display = lv_display_create(CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
     lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565);
-    esp_lcd_panel_handle_t panel_handle = initPanel(display);
+
+    FlushCallbackData callbackData{xSemaphore, display};
+    esp_lcd_panel_handle_t panel_handle = initPanel(static_cast<void *>(&callbackData));
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
@@ -546,8 +555,7 @@ void task_lvgl(void *arg)
     Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, CONFIG_LCD_BACKLIGHT_HZ};
     backlight.init();
     backlight.power(true);
-
-    uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
+    backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
 
     int32_t temperatureAverageLastHourCentigrade{0};
     uint32_t humidityAverageLastHour{0U};
@@ -557,21 +565,16 @@ void task_lvgl(void *arg)
 
     while (true)
     {
-        task_delay_ms = lv_timer_handler();
-
-        if (task_delay_ms > LVGL_TASK_MAX_DELAY_MS)
+        TickType_t xTicksToWait{portMAX_DELAY};
+        if (backlight.isOn())
         {
-            task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
-        }
-        else if (task_delay_ms < LVGL_TASK_MIN_DELAY_MS)
-        {
-            task_delay_ms = LVGL_TASK_MIN_DELAY_MS;
+            ESP_LOGI(TAG, "Updating UI");
+            uint32_t task_delay_ms = lv_timer_handler();
+            xTicksToWait = pdMS_TO_TICKS(task_delay_ms);
         }
 
-        // Since no animations need to run frequently this task can wait for sensor data to update the UI
-        // using xQueueReceive instead of yielding to a second task using vTaskDelay
         QueueValueType queueData{};
-        if (xQueueReceive(uiTaskInterface->m_measurementQueue_in, &queueData, pdMS_TO_TICKS(task_delay_ms)) == pdPASS)
+        if (xQueueReceive(uiTaskInterface->m_measurementQueue_in, &queueData, xTicksToWait) == pdPASS)
         {
             // Get time
             std::time_t now{};
@@ -590,10 +593,9 @@ void task_lvgl(void *arg)
             }
             if (std::holds_alternative<ButtonData>(queueData))
             {
-                backlight.stopFade();
-                backlight.dim(100);
                 ButtonData &buttonData = std::get<ButtonData>(queueData);
-                if (buttonData.m_tabviewButtonPressed && (uiTaskInterface->m_tabview != nullptr))
+
+                if (backlight.isOn() && buttonData.m_tabviewButtonPressed && (uiTaskInterface->m_tabview != nullptr))
                 {
                     uint16_t current_tab = lv_tabview_get_tab_act(uiTaskInterface->m_tabview);
                     uint16_t next_tab = current_tab + 1;
@@ -603,6 +605,13 @@ void task_lvgl(void *arg)
                     }
                     lv_tabview_set_active(uiTaskInterface->m_tabview, next_tab, LV_ANIM_OFF);
                 }
+
+                esp_lcd_panel_disp_sleep(panel_handle, false);
+                backlight.init();
+                backlight.stopFade();
+                backlight.dim(100);
+                vTaskDelay(pdMS_TO_TICKS(10));
+                backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
             }
             else if (std::holds_alternative<WifiData>(queueData))
             {
@@ -685,7 +694,6 @@ void task_lvgl(void *arg)
                 }
             }
 
-            backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
             ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
         }
     }
