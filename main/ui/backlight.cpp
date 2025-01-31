@@ -128,6 +128,8 @@ static IRAM_ATTR bool fadeEndCallback(const ledc_cb_param_t *param, void *user_a
         {
             ledc_fade_func_uninstall();
 
+            ESP_ERROR_CHECK(ledc_stop(static_cast<ledc_mode_t>(param->speed_mode), static_cast<ledc_channel_t>(param->channel), 0));
+
             ESP_ERROR_CHECK(ledc_timer_pause(static_cast<ledc_mode_t>(param->speed_mode), timer));
 
             ledc_timer_config_t ledc_timer{};

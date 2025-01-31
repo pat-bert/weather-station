@@ -555,6 +555,7 @@ void task_lvgl(void *arg)
     Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, CONFIG_LCD_BACKLIGHT_HZ};
     backlight.init();
     backlight.power(true);
+    vTaskDelay(pdMS_TO_TICKS(10));
     backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
 
     int32_t temperatureAverageLastHourCentigrade{0};
@@ -609,7 +610,7 @@ void task_lvgl(void *arg)
                 esp_lcd_panel_disp_sleep(panel_handle, false);
                 backlight.init();
                 backlight.stopFade();
-                backlight.dim(100);
+                backlight.power(true);
                 vTaskDelay(pdMS_TO_TICKS(10));
                 backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
             }
