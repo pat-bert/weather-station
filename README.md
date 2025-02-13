@@ -85,9 +85,11 @@ The ESP32-C6 is then in light sleep mode, the LCD controller is sleeping (blank 
 The low-power core wakes the high-power core every 60 seconds to update the sensor data.
 
 When Wi-Fi is disabled FreeRTOS still runs a task for LwIP that periodically wakes up the processor causing current spikes.
+
 ![Power consumption in automatic light sleep, LwIP task running](PowerConsumptionLightSleepAfterWifiDisable.BMP)
 
 The task can be suspended by acquiring the handle from the task name resulting in a lower current consumption.
+
 ![Power consumption in automatic light sleep, LwIP task suspended](PowerConsumptionLightSleepSuspendLwIPTask.BMP)
 
 Further possible optimizations include:
