@@ -11,7 +11,7 @@ struct WifiData
 
 struct ButtonData
 {
-    bool m_tabviewButtonPressed;
+    bool m_buttonPressed;
 };
 
 struct FadeData

@@ -46,6 +46,7 @@ Holding the push-button for seven seconds or longer will perform a factory reset
 - [x] Read sensors using LP core
 - [x] Sleep display and turn off backlight after n seconds of user inactivity
 - [x] Wake display based on button
+- [ ] Save RC-Slow cycles of last successful SNTP
 - [ ] Wake display based on proximity reading from time-of-flight sensor
 - [ ] Deep sleep HP core
 - [x] Re-evaluate power usage with Firebeetle
@@ -83,7 +84,11 @@ Currently, the minimum power consumption is achieved when the LCD is faded off.
 The ESP32-C6 is then in light sleep mode, the LCD controller is sleeping (blank display).
 The low-power core wakes the high-power core every 60 seconds to update the sensor data.
 
-![alt text](PowerConsumptionLightSleep.BMP)
+When Wi-Fi is disabled FreeRTOS still runs a task for LwIP that periodically wakes up the processor causing current spikes.
+![Power consumption in automatic light sleep, LwIP task running](PowerConsumptionLightSleepAfterWifiDisable.BMP)
+
+The task can be suspended by acquiring the handle from the task name resulting in a lower current consumption.
+![Power consumption in automatic light sleep, LwIP task suspended](PowerConsumptionLightSleepSuspendLwIPTask.BMP)
 
 Further possible optimizations include:
 

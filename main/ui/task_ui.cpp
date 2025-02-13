@@ -32,6 +32,8 @@ constexpr uint16_t numberOfSensorReadingsSaved{24};
 constexpr uint8_t hoursTickDivider{6};
 constexpr uint16_t numberMajorTicksHoursHistory{numberOfSensorReadingsSaved / hoursTickDivider + 1};
 
+const char TAG[] = "lvgl";
+
 void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
 {
     constexpr lv_coord_t topRibbonHeight{15};
@@ -431,27 +433,12 @@ void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
     }
 }
 
-struct FlushCallbackData
-{
-    QueueHandle_t m_semaphore;
-    lv_display_t *m_display;
-};
-
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
     FlushCallbackData *callbackData = static_cast<FlushCallbackData *>(user_ctx);
     lv_display_flush_ready(callbackData->m_display);
-
-    BaseType_t pxHigherPriorityTaskWoken{pdFALSE};
-    if (lv_display_flush_is_last(callbackData->m_display))
-    {
-        xSemaphoreGiveFromISR(callbackData->m_semaphore, &pxHigherPriorityTaskWoken);
-    }
-
-    return (pxHigherPriorityTaskWoken == pdPASS);
+    return false;
 }
-
-static bool screenModified{false};
 
 static void lvgl_flush_cb(lv_display_t *display, const lv_area_t *area, unsigned char *color_map)
 {
@@ -464,7 +451,6 @@ static void lvgl_flush_cb(lv_display_t *display, const lv_area_t *area, unsigned
     // swap upper and lower bytes of 16 bit color values due to endianness
     lv_draw_sw_rgb565_swap(color_map, lv_area_get_size(area));
     esp_lcd_panel_draw_bitmap(panelHandle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
-    screenModified = true;
 }
 
 esp_lcd_panel_handle_t initPanel(void *callbackData)
@@ -512,21 +498,173 @@ void IRAM_ATTR increase_lvgl_tick(void)
     lv_tick_inc(1000 / CONFIG_FREERTOS_HZ);
 }
 
+void handleButtonData(UiTaskInterface *uiTaskInterface, const ButtonData &buttonData, Backlight &backlight, esp_lcd_panel_handle_t panelHandle)
+{
+    if (backlight.isOn() && buttonData.m_buttonPressed && (uiTaskInterface->m_tabview != nullptr))
+    {
+        uint16_t current_tab = lv_tabview_get_tab_act(uiTaskInterface->m_tabview);
+        uint16_t next_tab = current_tab + 1;
+        if (next_tab >= lv_tabview_get_tab_count(uiTaskInterface->m_tabview))
+        {
+            next_tab = 0;
+        }
+        lv_tabview_set_active(uiTaskInterface->m_tabview, next_tab, LV_ANIM_OFF);
+    }
+
+    esp_lcd_panel_disp_sleep(panelHandle, false);
+    backlight.init();
+    backlight.stopFade();
+    backlight.power(true);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
+}
+
+void handleFadeData(const FadeData &fadeData, esp_lcd_panel_handle_t panelHandle)
+{
+    if (fadeData.m_requestLcdControllerOff)
+    {
+        ESP_ERROR_CHECK(esp_lcd_panel_disp_sleep(panelHandle, true));
+    }
+}
+
+void handleWifiData(UiTaskInterface *uiTaskInterface, const WifiData &wifiData)
+{
+    if (uiTaskInterface->m_provisioningQrCode != nullptr)
+    {
+        lv_qrcode_update(uiTaskInterface->m_provisioningQrCode, wifiData.m_provisioningPayload, std::strlen(wifiData.m_provisioningPayload));
+        lv_obj_remove_flag(uiTaskInterface->m_provisioningQrCode, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void handleSensorData(UiTaskInterface *uiTaskInterface, const SensorData &sensorData, SensorAverageData &sensorAverageData)
+{
+    ESP_LOGI(TAG, "%ld.%ld °C %ld%% %ld hPa %u lx", sensorData.m_temperature / 100, sensorData.m_temperature % 100, sensorData.m_humidity, sensorData.m_pressure / 100, sensorData.m_illuminance);
+
+    sensorAverageData.m_sensorReadingsLastHour++;
+    if (sensorAverageData.m_sensorReadingsLastHour > 60)
+    {
+        sensorAverageData.m_temperatureAverageLastHourCentigrade = 0;
+        sensorAverageData.m_humidityAverageLastHour = 0U;
+        sensorAverageData.m_sensorReadingsLastHour = 1;
+        sensorAverageData.m_hoursTracked++;
+        if (sensorAverageData.m_hoursTracked >= 24U)
+        {
+            sensorAverageData.m_hoursTracked = 0U;
+        }
+    }
+    sensorAverageData.m_temperatureAverageLastHourCentigrade = (sensorAverageData.m_temperatureAverageLastHourCentigrade * (sensorAverageData.m_sensorReadingsLastHour - 1) + sensorData.m_temperature) / sensorAverageData.m_sensorReadingsLastHour;
+    sensorAverageData.m_humidityAverageLastHour = (sensorAverageData.m_humidityAverageLastHour * (sensorAverageData.m_sensorReadingsLastHour - 1) + sensorData.m_humidity) / sensorAverageData.m_sensorReadingsLastHour;
+
+    // Update sensor readings
+    if (uiTaskInterface->m_temperatureLabel != nullptr)
+    {
+        lv_label_set_text_fmt(uiTaskInterface->m_temperatureLabel, "%ld.%ld °C", sensorData.m_temperature / 100, (sensorData.m_temperature % 100) / 10);
+    }
+    if (uiTaskInterface->m_temperatureBar != nullptr)
+    {
+        lv_bar_set_value(uiTaskInterface->m_temperatureBar, sensorData.m_temperature / 100 * TEMPERATURE_SCALING_FACTOR, LV_ANIM_OFF);
+    }
+    if ((uiTaskInterface->m_pressureMeter != nullptr) && (uiTaskInterface->m_indic))
+    {
+        int32_t w{lv_obj_get_width(uiTaskInterface->m_pressureMeter)};
+        lv_scale_set_line_needle_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, w / 2 - 5, sensorData.m_pressure / PRESSURE_SCALING_DIVISOR);
+    }
+    if (uiTaskInterface->m_illuminanceLabel != nullptr)
+    {
+        lv_label_set_text_fmt(uiTaskInterface->m_illuminanceLabel, "%u lx", sensorData.m_illuminance);
+    }
+    if (uiTaskInterface->m_humidityLabel != nullptr)
+    {
+        lv_label_set_text_fmt(uiTaskInterface->m_humidityLabel, "%ld%%", sensorData.m_humidity);
+    }
+    if (uiTaskInterface->m_temperatureAndHumidityChart != nullptr)
+    {
+        if (uiTaskInterface->m_temperatureSeries != nullptr)
+        {
+            if (sensorAverageData.m_sensorReadingsLastHour == 1)
+            {
+                lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, sensorAverageData.m_temperatureAverageLastHourCentigrade / 100);
+            }
+            else
+            {
+                lv_chart_set_value_by_id(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, (numberOfSensorReadingsSaved - 1 + sensorAverageData.m_hoursTracked) % numberOfSensorReadingsSaved, sensorAverageData.m_temperatureAverageLastHourCentigrade / 100);
+            }
+        }
+
+        if (uiTaskInterface->m_humiditySeries != nullptr)
+        {
+            if (sensorAverageData.m_sensorReadingsLastHour == 1)
+            {
+                lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_humiditySeries, sensorAverageData.m_humidityAverageLastHour);
+            }
+            else
+            {
+                lv_chart_set_value_by_id(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_humiditySeries, (numberOfSensorReadingsSaved - 1 + sensorAverageData.m_hoursTracked) % numberOfSensorReadingsSaved, sensorAverageData.m_humidityAverageLastHour);
+            }
+        }
+    }
+}
+
+void handleCommon(UiTaskInterface *uiTaskInterface)
+{
+    // Get time
+    std::time_t now{};
+    std::time(&now);
+
+    std::tm *timeinfo{};
+    timeinfo = std::localtime(&now);
+
+    char timeStringBuffer[std::size("Wednesday dd.mm.yyyy hh:mm")];
+    std::strftime(timeStringBuffer, sizeof(timeStringBuffer), "%A %d.%m.%Y %H:%M", timeinfo);
+    ESP_LOGI(TAG, "Time: %s", timeStringBuffer);
+
+    // Update current date and time
+    if ((timeinfo->tm_year > (1970 - 1900)) && (uiTaskInterface->m_timeLabel != nullptr))
+    {
+        lv_label_set_text(uiTaskInterface->m_timeLabel, timeStringBuffer);
+    }
+}
+
+void handleQueue(UiTaskInterface *uiTaskInterface, const QueueValueType &queueData, SensorAverageData &sensorAverageData, Backlight &backlight, esp_lcd_panel_handle_t panelHandle)
+{
+    handleCommon(uiTaskInterface);
+
+    if (std::holds_alternative<ButtonData>(queueData))
+    {
+        const ButtonData &buttonData = std::get<ButtonData>(queueData);
+        handleButtonData(uiTaskInterface, buttonData, backlight, panelHandle);
+    }
+    else if (std::holds_alternative<FadeData>(queueData))
+    {
+        const FadeData &fadeData = std::get<FadeData>(queueData);
+        handleFadeData(fadeData, panelHandle);
+    }
+    else if (std::holds_alternative<WifiData>(queueData))
+    {
+        const WifiData &wifiData = std::get<WifiData>(queueData);
+        handleWifiData(uiTaskInterface, wifiData);
+    }
+    else if (std::holds_alternative<SensorData>(queueData))
+    {
+        const SensorData &sensorData = std::get<SensorData>(queueData);
+        handleSensorData(uiTaskInterface, sensorData, sensorAverageData);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Unhandled queue data");
+    }
+}
+
 void task_lvgl(void *arg)
 {
-    const char TAG[] = "lvgl";
     ESP_LOGI(TAG, "Starting LVGL task");
-
-    QueueHandle_t xSemaphore = xSemaphoreCreateBinary();
-
-    ESP_LOGI(TAG, "Initialize LVGL library");
     lv_init();
 
     ESP_LOGI(TAG, "Install ST7735 panel driver");
     lv_display_t *display = lv_display_create(CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
     lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565);
 
-    FlushCallbackData callbackData{xSemaphore, display};
+    FlushCallbackData callbackData{display};
     esp_lcd_panel_handle_t panelHandle = initPanel(static_cast<void *>(&callbackData));
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panelHandle));
@@ -552,159 +690,30 @@ void task_lvgl(void *arg)
     lvgl_create_ui(uiTaskInterface);
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panelHandle, true));
 
-    Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, CONFIG_LCD_BACKLIGHT_HZ, uiTaskInterface->m_measurementQueue_in};
+    Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, CONFIG_LCD_BACKLIGHT_HZ, uiTaskInterface->m_queue_in};
     backlight.init();
     backlight.power(true);
     vTaskDelay(pdMS_TO_TICKS(10));
     backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
 
-    int32_t temperatureAverageLastHourCentigrade{0};
-    uint32_t humidityAverageLastHour{0U};
-
-    uint8_t sensorReadingsLastHour{0U};
-    uint8_t hoursTracked{0U};
+    SensorAverageData sensorAverageData{};
 
     while (true)
     {
         TickType_t xTicksToWait{portMAX_DELAY};
         if (backlight.isOn())
         {
-            ESP_LOGI(TAG, "Updating UI");
-            uint32_t task_delay_ms = lv_timer_handler();
-            xTicksToWait = pdMS_TO_TICKS(task_delay_ms);
+            // Only handle LVGL updates when backlight is actually on (and LCD controller is displaying)
+            uint32_t taskDelayMs = lv_timer_handler();
+            xTicksToWait = pdMS_TO_TICKS(taskDelayMs);
         }
 
         QueueValueType queueData{};
-        if (xQueueReceive(uiTaskInterface->m_measurementQueue_in, &queueData, xTicksToWait) == pdPASS)
+        if (xQueueReceive(uiTaskInterface->m_queue_in, &queueData, xTicksToWait) == pdPASS)
         {
-            // Get time
-            std::time_t now{};
-            std::time(&now);
-
-            std::tm *timeinfo{};
-            timeinfo = std::localtime(&now);
-
-            char timeStringBuffer[std::size("Wednesday dd.mm.yyyy hh:mm")];
-            std::strftime(timeStringBuffer, sizeof(timeStringBuffer), "%A %d.%m.%Y %H:%M", timeinfo);
-
-            // Update current date and time
-            if ((timeinfo->tm_year > (1970 - 1900)) && (uiTaskInterface->m_timeLabel != nullptr))
-            {
-                lv_label_set_text(uiTaskInterface->m_timeLabel, timeStringBuffer);
-            }
-            if (std::holds_alternative<ButtonData>(queueData))
-            {
-                ButtonData &buttonData = std::get<ButtonData>(queueData);
-
-                if (backlight.isOn() && buttonData.m_tabviewButtonPressed && (uiTaskInterface->m_tabview != nullptr))
-                {
-                    uint16_t current_tab = lv_tabview_get_tab_act(uiTaskInterface->m_tabview);
-                    uint16_t next_tab = current_tab + 1;
-                    if (next_tab >= lv_tabview_get_tab_count(uiTaskInterface->m_tabview))
-                    {
-                        next_tab = 0;
-                    }
-                    lv_tabview_set_active(uiTaskInterface->m_tabview, next_tab, LV_ANIM_OFF);
-                }
-
-                esp_lcd_panel_disp_sleep(panelHandle, false);
-                backlight.init();
-                backlight.stopFade();
-                backlight.power(true);
-                vTaskDelay(pdMS_TO_TICKS(10));
-                backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
-            }
-            else if (std::holds_alternative<FadeData>(queueData))
-            {
-                FadeData &fadeData = std::get<FadeData>(queueData);
-                if (fadeData.m_requestLcdControllerOff)
-                {
-                    ESP_LOGI(TAG, "Turning off LCD controller");
-                    ESP_ERROR_CHECK(esp_lcd_panel_disp_sleep(panelHandle, true));
-                }
-            }
-            else if (std::holds_alternative<WifiData>(queueData))
-            {
-                WifiData &wifiData = std::get<WifiData>(queueData);
-
-                if (uiTaskInterface->m_provisioningQrCode != nullptr)
-                {
-                    lv_qrcode_update(uiTaskInterface->m_provisioningQrCode, wifiData.m_provisioningPayload, std::strlen(wifiData.m_provisioningPayload));
-                    lv_obj_remove_flag(uiTaskInterface->m_provisioningQrCode, LV_OBJ_FLAG_HIDDEN);
-                }
-            }
-            else if (std::holds_alternative<SensorData>(queueData))
-            {
-                SensorData &sensorData = std::get<SensorData>(queueData);
-
-                ESP_LOGI(TAG, "%ld.%ld °C %ld%% %ld hPa %u lx @ %s", sensorData.m_temperature / 100, sensorData.m_temperature % 100, sensorData.m_humidity, sensorData.m_pressure / 100, sensorData.m_illuminance, timeStringBuffer);
-
-                sensorReadingsLastHour++;
-                if (sensorReadingsLastHour > 60)
-                {
-                    temperatureAverageLastHourCentigrade = 0;
-                    humidityAverageLastHour = 0U;
-                    sensorReadingsLastHour = 1;
-                    hoursTracked++;
-                    if (hoursTracked >= 24U)
-                    {
-                        hoursTracked = 0U;
-                    }
-                }
-                temperatureAverageLastHourCentigrade = (temperatureAverageLastHourCentigrade * (sensorReadingsLastHour - 1) + sensorData.m_temperature) / sensorReadingsLastHour;
-                humidityAverageLastHour = (humidityAverageLastHour * (sensorReadingsLastHour - 1) + sensorData.m_humidity) / sensorReadingsLastHour;
-
-                // Update sensor readings
-                if (uiTaskInterface->m_temperatureLabel != nullptr)
-                {
-                    lv_label_set_text_fmt(uiTaskInterface->m_temperatureLabel, "%ld.%ld °C", sensorData.m_temperature / 100, (sensorData.m_temperature % 100) / 10);
-                }
-                if (uiTaskInterface->m_temperatureBar != nullptr)
-                {
-                    lv_bar_set_value(uiTaskInterface->m_temperatureBar, sensorData.m_temperature / 100 * TEMPERATURE_SCALING_FACTOR, LV_ANIM_OFF);
-                }
-                if ((uiTaskInterface->m_pressureMeter != nullptr) && (uiTaskInterface->m_indic))
-                {
-                    int32_t w{lv_obj_get_width(uiTaskInterface->m_pressureMeter)};
-                    lv_scale_set_line_needle_value(uiTaskInterface->m_pressureMeter, uiTaskInterface->m_indic, w / 2 - 5, sensorData.m_pressure / PRESSURE_SCALING_DIVISOR);
-                }
-                if (uiTaskInterface->m_illuminanceLabel != nullptr)
-                {
-                    lv_label_set_text_fmt(uiTaskInterface->m_illuminanceLabel, "%u lx", sensorData.m_illuminance);
-                }
-                if (uiTaskInterface->m_humidityLabel != nullptr)
-                {
-                    lv_label_set_text_fmt(uiTaskInterface->m_humidityLabel, "%ld%%", sensorData.m_humidity);
-                }
-                if (uiTaskInterface->m_temperatureAndHumidityChart != nullptr)
-                {
-                    if (uiTaskInterface->m_temperatureSeries != nullptr)
-                    {
-                        if (sensorReadingsLastHour == 1)
-                        {
-                            lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, temperatureAverageLastHourCentigrade / 100);
-                        }
-                        else
-                        {
-                            lv_chart_set_value_by_id(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_temperatureSeries, (numberOfSensorReadingsSaved - 1 + hoursTracked) % numberOfSensorReadingsSaved, temperatureAverageLastHourCentigrade / 100);
-                        }
-                    }
-
-                    if (uiTaskInterface->m_humiditySeries != nullptr)
-                    {
-                        if (sensorReadingsLastHour == 1)
-                        {
-                            lv_chart_set_next_value(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_humiditySeries, humidityAverageLastHour);
-                        }
-                        else
-                        {
-                            lv_chart_set_value_by_id(uiTaskInterface->m_temperatureAndHumidityChart, uiTaskInterface->m_humiditySeries, (numberOfSensorReadingsSaved - 1 + hoursTracked) % numberOfSensorReadingsSaved, humidityAverageLastHour);
-                        }
-                    }
-                }
-            }
-
-            ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
+            handleQueue(uiTaskInterface, queueData, sensorAverageData, backlight, panelHandle);
         }
+
+        ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
     }
 }

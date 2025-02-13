@@ -27,7 +27,6 @@ idf_component_register(
         "ui/task_ui.hpp"
         "ui/ui_task_interface.hpp"
 
-        "wifi/build_time.hpp"
         "wifi/task_sntp.cpp"
         "wifi/task_sntp.hpp"
         "wifi/wifi_client.cpp"
@@ -59,9 +58,3 @@ add_compile_definitions(BME280_64BIT_ENABLE)
 if(CONFIG_ULP_COPROC_TYPE_LP_CORE)
 ulp_add_project("ulp_lp_sensor" "${CMAKE_SOURCE_DIR}/main/ulp/")
 endif()
-
-# Path to the header file
-set(HEADER_FILE_PATH "${CMAKE_SOURCE_DIR}/main/wifi/build_time.hpp")
-
-# Update the timestamp of the header file
-file(TOUCH ${HEADER_FILE_PATH})

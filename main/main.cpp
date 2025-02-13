@@ -42,19 +42,19 @@ static void IRAM_ATTR factoryResetCallback(void *button_handle, void *usr_data)
     esp_restart();
 }
 
-static void IRAM_ATTR changeActiveTabCallback(void *button_handle, void *usr_data)
+static void IRAM_ATTR singleClickCallback(void *button_handle, void *args)
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    UiTaskInterface *uiTaskInterface = static_cast<UiTaskInterface *>(usr_data);
+    UiTaskInterface *uiTaskInterface = static_cast<UiTaskInterface *>(args);
 
     if (uiTaskInterface != nullptr)
     {
         ButtonData buttonData{};
-        buttonData.m_tabviewButtonPressed = true;
+        buttonData.m_buttonPressed = true;
 
         QueueValueType queueData{buttonData};
-        xQueueSendFromISR(uiTaskInterface->m_measurementQueue_in, &queueData, &xHigherPriorityTaskWoken);
+        xQueueSendFromISR(uiTaskInterface->m_queue_in, &queueData, &xHigherPriorityTaskWoken);
     }
 
     if (xHigherPriorityTaskWoken)
@@ -78,7 +78,7 @@ static void initButton(UiTaskInterface &uiTaskInterface)
         ESP_LOGE(TAG, "Button create failed");
     }
 
-    ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_SINGLE_CLICK, changeActiveTabCallback, static_cast<void *>(&uiTaskInterface)));
+    ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_SINGLE_CLICK, singleClickCallback, static_cast<void *>(&uiTaskInterface)));
     ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_LONG_PRESS_HOLD, factoryResetCallback, nullptr));
 }
 
@@ -173,7 +173,7 @@ extern "C" void app_main(void)
 #endif
 
     UiTaskInterface uiTaskInterface{};
-    uiTaskInterface.m_measurementQueue_in = sensorTaskInterface.m_measurementQueue_out;
+    uiTaskInterface.m_queue_in = sensorTaskInterface.m_measurementQueue_out;
     TaskHandle_t xHandleDisplay{nullptr};
     xTaskCreate(task_lvgl, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleDisplay);
     configASSERT(xHandleDisplay);

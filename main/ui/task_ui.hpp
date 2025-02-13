@@ -29,6 +29,20 @@
 #define PRESSURE_TICKS_HPA (5)
 #define PRESSURE_SCALING_DIVISOR (100)
 
+struct SensorAverageData
+{
+    int32_t m_temperatureAverageLastHourCentigrade{0};
+    uint32_t m_humidityAverageLastHour{0U};
+
+    uint8_t m_sensorReadingsLastHour{0U};
+    uint8_t m_hoursTracked{0U};
+};
+
+struct FlushCallbackData
+{
+    lv_display_t *m_display;
+};
+
 void task_lvgl(void *arg);
 
 #endif

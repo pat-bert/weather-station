@@ -2,7 +2,6 @@
 
 #include "interface_sensor.hpp"
 
-#include "build_time.hpp"
 #include "wifi_client.hpp"
 #include "wifi_task_interface.hpp"
 
@@ -68,8 +67,8 @@ static esp_err_t get_sec2_verifier(const char **verifier, uint16_t *verifier_len
 }
 
 /* Signal Wi-Fi events on this event-group */
-const int WIFI_CONNECTED_EVENT = BIT0;
-static EventGroupHandle_t wifi_event_group;
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_DISCONNECTED_BIT BIT1
 
 #define PROV_QR_VERSION "v1"
 #define PROV_TRANSPORT_SOFTAP "softap"
@@ -78,6 +77,7 @@ static EventGroupHandle_t wifi_event_group;
 static void event_handler(void *arg, esp_event_base_t event_base,
                           int32_t event_id, void *event_data)
 {
+    const EventGroupHandle_t wifi_event_group = static_cast<EventGroupHandle_t>(arg);
     if (event_base == WIFI_PROV_EVENT)
     {
         switch (event_id)
@@ -128,7 +128,8 @@ static void event_handler(void *arg, esp_event_base_t event_base,
             break;
         case WIFI_EVENT_STA_DISCONNECTED:
             ESP_LOGI(TAG, "Disconnected. Connecting to the AP again...");
-            esp_wifi_connect();
+            // esp_wifi_connect();
+            xEventGroupSetBits(wifi_event_group, WIFI_DISCONNECTED_BIT);
             break;
         case WIFI_EVENT_AP_STACONNECTED:
             ESP_LOGI(TAG, "SoftAP transport: Connected!");
@@ -145,7 +146,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Connected with IP Address:" IPSTR, IP2STR(&event->ip_info.ip));
         /* Signal main application to continue execution */
-        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_EVENT);
+        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
     }
     else if (event_base == PROTOCOMM_SECURITY_SESSION_EVENT)
     {
@@ -213,19 +214,6 @@ void task_sntp(void *arg)
     setenv("TZ", CONFIG_TIMEZONE, 1);
     tzset();
 
-    // Set build time to have a nicer init instead of 1900 in case SNTP fails
-    std::tm timeinfo{};
-    timeinfo.tm_year = BUILD_YEAR - 1900;
-    timeinfo.tm_mon = BUILD_MONTH - 1;
-    timeinfo.tm_mday = BUILD_DAY;
-    timeinfo.tm_hour = BUILD_HOUR;
-    timeinfo.tm_min = BUILD_MIN;
-    timeinfo.tm_sec = BUILD_SEC;
-    std::time_t timeSinceEpoch = std::mktime(&timeinfo);
-    timeval tv{};
-    tv.tv_sec = timeSinceEpoch;
-    settimeofday(&tv, nullptr);
-
     /* Initialize NVS partition */
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -243,16 +231,16 @@ void task_sntp(void *arg)
 
     /* Initialize the event loop */
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    wifi_event_group = xEventGroupCreate();
+    EventGroupHandle_t wifi_event_group = xEventGroupCreate();
 
     /* Register our event handler for Wi-Fi, IP and Provisioning related events */
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_PROV_EVENT, ESP_EVENT_ANY_ID, &event_handler, nullptr));
-    ESP_ERROR_CHECK(esp_event_handler_register(PROTOCOMM_SECURITY_SESSION_EVENT, ESP_EVENT_ANY_ID, &event_handler, nullptr));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, nullptr));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_PROV_EVENT, ESP_EVENT_ANY_ID, &event_handler, static_cast<void *>(wifi_event_group)));
+    ESP_ERROR_CHECK(esp_event_handler_register(PROTOCOMM_SECURITY_SESSION_EVENT, ESP_EVENT_ANY_ID, &event_handler, static_cast<void *>(wifi_event_group)));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, static_cast<void *>(wifi_event_group)));
 
     /* Initialize Wi-Fi including netif with default config */
-    esp_netif_create_default_wifi_sta();
-    esp_netif_create_default_wifi_ap();
+    esp_netif_t *wifiStaNetIf = esp_netif_create_default_wifi_sta();
+    esp_netif_t *wifiApNetIf = esp_netif_create_default_wifi_ap();
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
@@ -332,44 +320,69 @@ void task_sntp(void *arg)
     }
     else
     {
-        ESP_LOGI(TAG, "Already provisioned, starting Wi-Fi STA");
+        ESP_LOGI(TAG, "Already provisioned");
 
         /* We don't need the manager as device is already provisioned,
          * so let's release it's resources */
         wifi_prov_mgr_deinit();
-
-        ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, nullptr));
-        /* Start Wi-Fi in station mode */
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-        ESP_ERROR_CHECK(esp_wifi_start());
     }
 
-    WifiClient wifiClient{};
-    while (true)
+    ESP_LOGI(TAG, "Starting Wi-Fi STA");
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, static_cast<void *>(wifi_event_group)));
+    /* Start Wi-Fi in station mode */
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
+     * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
+    xEventGroupWaitBits(wifi_event_group,
+                        WIFI_CONNECTED_BIT,
+                        pdFALSE,
+                        pdFALSE,
+                        portMAX_DELAY);
+
+    ESP_LOGI(TAG, "Connected to AP");
+
+    esp_sntp_config_t sntpConfig = ESP_NETIF_SNTP_DEFAULT_CONFIG(CONFIG_SNTP_SERVER_URL);
+    sntpConfig.start = true;
+    sntpConfig.wait_for_sync = true;
+    sntpConfig.sync_cb = sntp_time_sync_callback;
+    ESP_ERROR_CHECK(esp_netif_sntp_init(&sntpConfig));
+
+    // Wait for time to be synced
+    int retry = 0;
+    const int retry_count = 3;
+    while ((esp_netif_sntp_sync_wait(pdMS_TO_TICKS(2000)) == ESP_ERR_TIMEOUT) && (++retry <= retry_count))
     {
-        esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(CONFIG_SNTP_SERVER_URL);
-        config.start = true;
-        config.sync_cb = sntp_time_sync_callback;
-        ESP_ERROR_CHECK(esp_netif_sntp_init(&config));
-
-        // Wait for time to be synced
-        int retry = 0;
-        const int retry_count = 3;
-        while ((esp_netif_sntp_sync_wait(pdMS_TO_TICKS(2000)) == ESP_ERR_TIMEOUT) && (++retry < retry_count))
-        {
-            ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
-        }
-
-        esp_netif_sntp_deinit();
-
-        ESP_ERROR_CHECK(esp_wifi_disconnect());
-        ESP_ERROR_CHECK(esp_wifi_stop());
-
-        ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));
-
-        // The intermediate value becomes too large when 1000 is inside the macro
-        vTaskDelay(pdMS_TO_TICKS(CONFIG_SNTP_INTERVAL_HOURS * 60 * 60) * 1000);
-
-        ESP_ERROR_CHECK(esp_wifi_start());
+        ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
     }
+
+    esp_netif_sntp_deinit();
+
+    xEventGroupClearBits(wifi_event_group, WIFI_DISCONNECTED_BIT);
+    ESP_ERROR_CHECK(esp_wifi_disconnect());
+
+    xEventGroupWaitBits(wifi_event_group,
+                        WIFI_DISCONNECTED_BIT,
+                        pdFALSE,
+                        pdFALSE,
+                        portMAX_DELAY);
+
+    ESP_LOGI(TAG, "Disconnected from AP");
+
+    ESP_ERROR_CHECK(esp_wifi_stop());
+    ESP_ERROR_CHECK(esp_wifi_deinit());
+    ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler));
+    ESP_ERROR_CHECK(esp_wifi_clear_default_wifi_driver_and_handlers(wifiStaNetIf));
+    ESP_ERROR_CHECK(esp_wifi_clear_default_wifi_driver_and_handlers(wifiApNetIf));
+    ESP_ERROR_CHECK(esp_event_loop_delete_default());
+
+    esp_netif_destroy(wifiStaNetIf);
+    esp_netif_destroy(wifiApNetIf);
+
+    // LwIP task is still running, could lock it by calling tcpip_callback_wait and waiting indefinitely for a mutex inside
+
+    vTaskSuspend(xTaskGetHandle("tiT"));
+
+    vTaskDelete(nullptr);
 }

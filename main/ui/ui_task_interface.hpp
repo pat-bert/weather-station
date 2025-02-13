@@ -7,7 +7,7 @@
 
 struct UiTaskInterface
 {
-    QueueHandle_t m_measurementQueue_in;
+    QueueHandle_t m_queue_in;
     lv_obj_t *m_pressureMeter;
     lv_obj_t *m_indic;
     lv_obj_t *m_temperatureBar;
