@@ -50,6 +50,7 @@ static void IRAM_ATTR singleClickCallback(void *button_handle, void *args)
 
     if (uiTaskInterface != nullptr)
     {
+        // Only handle in case the UI task interface is initialized, e.g. not when exiting deep sleep
         ButtonData buttonData{};
         buttonData.m_buttonPressed = true;
 
@@ -73,6 +74,7 @@ static void initButton(UiTaskInterface &uiTaskInterface)
     gpio_btn_cfg.gpio_button_config.active_level = 0;
     gpio_btn_cfg.gpio_button_config.enable_power_save = true;
     button_handle_t gpio_btn = iot_button_create(&gpio_btn_cfg);
+    ESP_ERROR_CHECK(gpio_sleep_sel_dis(static_cast<gpio_num_t>(CONFIG_BUTTON_GPIO)));
     if (nullptr == gpio_btn)
     {
         ESP_LOGE(TAG, "Button create failed");
@@ -83,35 +85,7 @@ static void initButton(UiTaskInterface &uiTaskInterface)
 }
 
 #if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
-esp_err_t initLpCoreI2C()
-{
-    lp_core_i2c_cfg_t busConfigLpCore{};
-    busConfigLpCore.i2c_pin_cfg.scl_io_num = static_cast<gpio_num_t>(CONFIG_SCL_LP_GPIO);
-    busConfigLpCore.i2c_pin_cfg.scl_pullup_en = false;
-    busConfigLpCore.i2c_pin_cfg.sda_io_num = static_cast<gpio_num_t>(CONFIG_SDA_LP_GPIO);
-    busConfigLpCore.i2c_pin_cfg.sda_pullup_en = false;
-    busConfigLpCore.i2c_src_clk = LP_I2C_SCLK_DEFAULT;
-    busConfigLpCore.i2c_timing_cfg.clk_speed_hz = std::min(CONFIG_BME_I2C_CLOCK_KHZ, CONFIG_BH1750_I2C_CLOCK_KHZ) * 1000U;
-    return lp_core_i2c_master_init(LP_I2C_NUM_0, &busConfigLpCore);
-}
-
-static void init_ulp_program(void)
-{
-    ESP_ERROR_CHECK(initLpCoreI2C());
-
-    ESP_ERROR_CHECK(ulp_lp_core_load_binary(ulp_lp_sensor_bin_start, (ulp_lp_sensor_bin_end - ulp_lp_sensor_bin_start)));
-
-    ulp_lp_core_cfg_t cfg{};
-    cfg.wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_LP_TIMER | ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU;
-    cfg.lp_timer_sleep_duration_us = 1000 * 1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS;
-
-    // When using LP timer wake-up the LP-core starts with the specified delay instead of immediately
-    // which means that the ulp_* variables are still uninitialized and accessing them from the HP core results in an exception
-
-    ESP_ERROR_CHECK(ulp_lp_core_run(&cfg));
-}
-
-static void lightSleepExitCallback(void *arg)
+static void ulpSoftwareInterruptCallback(void *arg)
 {
     // Clear the interrupt bit
     REG_SET_BIT(PMU_HP_INT_CLR_REG, PMU_SW_INT_CLR);
@@ -126,17 +100,52 @@ static void lightSleepExitCallback(void *arg)
 
     QueueValueType queueData{sensorData};
     BaseType_t pxHigherPriorityTaskWoken{pdFALSE};
+
     xQueueSendFromISR(sensorTaskInterface->m_measurementQueue_out, &queueData, &pxHigherPriorityTaskWoken);
+}
+
+static void initLpCore(SensorTaskInterface *sensorTaskInterface)
+{
+    // Allocate and enable interrupt on signal from LP-core
+    intr_handle_t interruptHandle{};
+    ESP_ERROR_CHECK(esp_intr_alloc_intrstatus(ETS_PMU_INTR_SOURCE, 0, PMU_HP_INT_ST_REG, PMU_SW_INT_ST, ulpSoftwareInterruptCallback, static_cast<void *>(sensorTaskInterface), &interruptHandle));
+    ESP_ERROR_CHECK(esp_intr_enable(interruptHandle));
+    REG_SET_BIT(PMU_HP_INT_ENA_REG, PMU_SW_INT_ENA);
+
+    ESP_ERROR_CHECK(esp_sleep_enable_ulp_wakeup());
+
+    lp_core_i2c_cfg_t busConfigLpCore{};
+    busConfigLpCore.i2c_pin_cfg.scl_io_num = static_cast<gpio_num_t>(CONFIG_SCL_LP_GPIO);
+    busConfigLpCore.i2c_pin_cfg.scl_pullup_en = false;
+    busConfigLpCore.i2c_pin_cfg.sda_io_num = static_cast<gpio_num_t>(CONFIG_SDA_LP_GPIO);
+    busConfigLpCore.i2c_pin_cfg.sda_pullup_en = false;
+    busConfigLpCore.i2c_src_clk = LP_I2C_SCLK_DEFAULT;
+    busConfigLpCore.i2c_timing_cfg.clk_speed_hz = std::min(CONFIG_BME_I2C_CLOCK_KHZ, CONFIG_BH1750_I2C_CLOCK_KHZ) * 1000U;
+    ESP_ERROR_CHECK(lp_core_i2c_master_init(LP_I2C_NUM_0, &busConfigLpCore));
+
+    ESP_ERROR_CHECK(ulp_lp_core_load_binary(ulp_lp_sensor_bin_start, (ulp_lp_sensor_bin_end - ulp_lp_sensor_bin_start)));
+
+    // When using LP timer wake-up the LP-core starts with the specified delay instead of immediately
+    // which means that the ulp_* variables are still uninitialized and accessing them from the HP core results in an exception
+    ulp_lp_core_cfg_t cfg{};
+    cfg.wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_LP_TIMER | ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU;
+    cfg.lp_timer_sleep_duration_us = 1000 * 1000 * CONFIG_MEASUREMENT_INTERVAL_SECONDS;
+
+    // Start the coprocessor
+    ESP_ERROR_CHECK(ulp_lp_core_run(&cfg));
 }
 
 #endif
 
 extern "C" void app_main(void)
 {
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
     esp_pm_config_t pm_config{};
     ESP_ERROR_CHECK(esp_pm_get_configuration(&pm_config));
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
-    pm_config.light_sleep_enable = true;
+    // TODO Fade-end callback currently never called when automatic light sleep is enabled
+    pm_config.light_sleep_enable = false;
 #endif
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
     ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_MODEM, ESP_PD_OPTION_ON));
@@ -144,26 +153,56 @@ extern "C" void app_main(void)
 
     QueueHandle_t measurementQueue{xQueueCreate(5, sizeof(QueueValueType))};
     configASSERT(measurementQueue);
+
+    EventGroupHandle_t sleepEventGroup{xEventGroupCreate()};
+    configASSERT(sleepEventGroup);
+
     SensorTaskInterface sensorTaskInterface{measurementQueue};
 
-    esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-    if (cause != ESP_SLEEP_WAKEUP_ULP)
+    EventBits_t uxBitsToWaitFor{};
+
+    esp_sleep_wakeup_cause_t cause{esp_sleep_get_wakeup_cause()};
+    switch (cause)
     {
+    case ESP_SLEEP_WAKEUP_UNDEFINED:
+    {
+        ESP_LOGI(TAG, "Initial boot");
+
 #if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
-        ESP_LOGI(TAG, "Not an LP core wakeup. Cause = %d", cause);
+        initLpCore(&sensorTaskInterface);
 
-        // Allocate and enable interrupt on signal from LP-core
-        intr_handle_t interruptHandle{};
-        ESP_ERROR_CHECK(esp_intr_alloc_intrstatus(ETS_PMU_INTR_SOURCE, 0, PMU_HP_INT_ST_REG, PMU_SW_INT_ST, lightSleepExitCallback, static_cast<void *>(&sensorTaskInterface), &interruptHandle));
-        ESP_ERROR_CHECK(esp_intr_enable(interruptHandle));
-        REG_SET_BIT(PMU_HP_INT_ENA_REG, PMU_SW_INT_ENA);
+        WifiTaskInterface wifiTaskInterface{measurementQueue, sleepEventGroup};
+        TaskHandle_t xHandleSntp{nullptr};
+        xTaskCreate(task_sntp, "sntp", SNTP_TASK_STACK_SIZE, static_cast<void *>(&wifiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSntp);
+        configASSERT(xHandleSntp);
 
-        // Enable wake-up
-        ESP_ERROR_CHECK(esp_sleep_enable_ulp_wakeup());
-
-        // Load LP Core binary and start the coprocessor
-        init_ulp_program();
+        uxBitsToWaitFor |= SNTP_READY_FOR_DEEP_SLEEP;
+        break;
 #endif
+    }
+    case ESP_SLEEP_WAKEUP_ULP:
+    {
+        ESP_LOGI(TAG, "LP core wakeup");
+        // TODO Start UI without display reinit, with backlight off, in case user presses button while we are awake
+        break;
+    }
+    case ESP_SLEEP_WAKEUP_GPIO:
+    {
+        ESP_LOGI(TAG, "GPIO wakeup");
+        // TODO Start UI with backlight on
+        break;
+    }
+    case ESP_SLEEP_WAKEUP_TIMER:
+    {
+        ESP_LOGI(TAG, "Timer wakeup");
+        // TODO Synchronize SNTP once per day/after shorter period if it failed last time
+        break;
+    }
+    default:
+    {
+        ESP_LOGI(TAG, "Wakeup cause = %d", cause);
+        break;
+    }
     }
 
 #if !(SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE)
@@ -174,16 +213,32 @@ extern "C" void app_main(void)
 
     UiTaskInterface uiTaskInterface{};
     uiTaskInterface.m_queue_in = sensorTaskInterface.m_measurementQueue_out;
+    uiTaskInterface.m_sleepEventGroup = sleepEventGroup;
     TaskHandle_t xHandleDisplay{nullptr};
     xTaskCreate(task_lvgl, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleDisplay);
     configASSERT(xHandleDisplay);
+    uxBitsToWaitFor |= UI_READY_FOR_DEEP_SLEEP;
 
     initButton(uiTaskInterface);
 
-    WifiTaskInterface wifiTaskInterface{measurementQueue};
-    TaskHandle_t xHandleSntp{nullptr};
-    xTaskCreate(task_sntp, "sntp", SNTP_TASK_STACK_SIZE, static_cast<void *>(&wifiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSntp);
-    configASSERT(xHandleSntp);
+    // Wait for all tasks to signal that they are ready for deep sleep
+    if (uxBitsToWaitFor != 0)
+    {
+        // Skip wait if no tasks need to be waited on, asserts otherwise
+        xEventGroupWaitBits(sleepEventGroup,
+                            uxBitsToWaitFor,
+                            pdFALSE,
+                            pdTRUE,
+                            portMAX_DELAY);
+    }
 
-    vTaskSuspend(nullptr);
+    // Disable timer wake-up enabled for FreeRTOS tickless
+    pm_config.light_sleep_enable = false;
+    ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
+
+    // Enable button wake-up also from deep sleep and hold pin
+    ESP_ERROR_CHECK(esp_deep_sleep_enable_gpio_wakeup(1ULL << CONFIG_BUTTON_GPIO, ESP_GPIO_WAKEUP_GPIO_LOW));
+
+    ESP_LOGI(TAG, "Entering deep sleep");
+    esp_deep_sleep_start();
 }

@@ -519,11 +519,12 @@ void handleButtonData(UiTaskInterface *uiTaskInterface, const ButtonData &button
     backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
 }
 
-void handleFadeData(const FadeData &fadeData, esp_lcd_panel_handle_t panelHandle)
+void handleFadeData(UiTaskInterface *uiTaskInterface, const FadeData &fadeData, esp_lcd_panel_handle_t panelHandle)
 {
     if (fadeData.m_requestLcdControllerOff)
     {
         ESP_ERROR_CHECK(esp_lcd_panel_disp_sleep(panelHandle, true));
+        xEventGroupSetBits(uiTaskInterface->m_sleepEventGroup, UI_READY_FOR_DEEP_SLEEP);
     }
 }
 
@@ -637,7 +638,7 @@ void handleQueue(UiTaskInterface *uiTaskInterface, const QueueValueType &queueDa
     else if (std::holds_alternative<FadeData>(queueData))
     {
         const FadeData &fadeData = std::get<FadeData>(queueData);
-        handleFadeData(fadeData, panelHandle);
+        handleFadeData(uiTaskInterface, fadeData, panelHandle);
     }
     else if (std::holds_alternative<WifiData>(queueData))
     {

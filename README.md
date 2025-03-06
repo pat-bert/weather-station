@@ -92,7 +92,19 @@ The task can be suspended by acquiring the handle from the task name resulting i
 
 ![Power consumption in automatic light sleep, LwIP task suspended](PowerConsumptionLightSleepSuspendLwIPTask.BMP)
 
+The ESP can be put into deep sleep once the display is fully faded off and the SNTP sync is finished.
+
+![Power consumption in deep sleep](PowerConsumptionDeepSleep.jpg)
+
+The measured 290 uA consist of roughly:
+
+- 170 uA BME280 breakout board with **on-board LDO and logic level shifting IC**, compared to 0.1 uA sleep current according to datasheet (!)
+- 100 uA ST7735 breakout board, compared to max. 45 uA according to datasheet
+- 15 uA ESP32-C6 in deep sleep
+- 5 uA BH1750 breakout board with on-board LDO and logic level shifting IC
+
+Whenever the LP-core wakes up and triggers sensor measurements the current consumption is briefly slightly higher.
+
 Further possible optimizations include:
 
-- Entering deep sleep once display is faded off
-- Aggregate sensor values in LP-core to avoid wake-up
+- Aggregate sensor values in LP-core to avoid HP-core wake-up every measurement cycle

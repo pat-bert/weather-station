@@ -35,4 +35,7 @@ struct SensorData
 
 using QueueValueType = std::variant<SensorData, ButtonData, WifiData, FadeData>;
 
+#define SNTP_READY_FOR_DEEP_SLEEP BIT0
+#define UI_READY_FOR_DEEP_SLEEP BIT1
+
 #endif

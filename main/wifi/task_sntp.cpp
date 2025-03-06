@@ -384,5 +384,7 @@ void task_sntp(void *arg)
 
     vTaskSuspend(xTaskGetHandle("tiT"));
 
+    xEventGroupSetBits(wifiTaskInterface->m_sleepEventGroup, SNTP_READY_FOR_DEEP_SLEEP);
+
     vTaskDelete(nullptr);
 }

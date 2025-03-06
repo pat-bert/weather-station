@@ -7,6 +7,7 @@
 struct WifiTaskInterface
 {
     QueueHandle_t m_measurementQueue_out;
+    EventGroupHandle_t m_sleepEventGroup;
 };
 
 #endif
