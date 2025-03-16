@@ -34,6 +34,10 @@ constexpr uint16_t numberMajorTicksHoursHistory{numberOfSensorReadingsSaved / ho
 
 const char TAG[] = "lvgl";
 
+RTC_DATA_ATTR SensorData lastSensorData{};
+// TODO Take average data from ulp
+// TODO Remember last viewed tab
+
 void lvgl_create_ui(UiTaskInterface *uiTaskInterface)
 {
     constexpr lv_coord_t topRibbonHeight{15};
@@ -537,26 +541,8 @@ void handleWifiData(UiTaskInterface *uiTaskInterface, const WifiData &wifiData)
     }
 }
 
-void handleSensorData(UiTaskInterface *uiTaskInterface, const SensorData &sensorData, SensorAverageData &sensorAverageData)
+void handleCurrentSensorData(UiTaskInterface *uiTaskInterface, const SensorData &sensorData)
 {
-    ESP_LOGI(TAG, "%ld.%ld °C %ld%% %ld hPa %u lx", sensorData.m_temperature / 100, sensorData.m_temperature % 100, sensorData.m_humidity, sensorData.m_pressure / 100, sensorData.m_illuminance);
-
-    sensorAverageData.m_sensorReadingsLastHour++;
-    if (sensorAverageData.m_sensorReadingsLastHour > 60)
-    {
-        sensorAverageData.m_temperatureAverageLastHourCentigrade = 0;
-        sensorAverageData.m_humidityAverageLastHour = 0U;
-        sensorAverageData.m_sensorReadingsLastHour = 1;
-        sensorAverageData.m_hoursTracked++;
-        if (sensorAverageData.m_hoursTracked >= 24U)
-        {
-            sensorAverageData.m_hoursTracked = 0U;
-        }
-    }
-    sensorAverageData.m_temperatureAverageLastHourCentigrade = (sensorAverageData.m_temperatureAverageLastHourCentigrade * (sensorAverageData.m_sensorReadingsLastHour - 1) + sensorData.m_temperature) / sensorAverageData.m_sensorReadingsLastHour;
-    sensorAverageData.m_humidityAverageLastHour = (sensorAverageData.m_humidityAverageLastHour * (sensorAverageData.m_sensorReadingsLastHour - 1) + sensorData.m_humidity) / sensorAverageData.m_sensorReadingsLastHour;
-
-    // Update sensor readings
     if (uiTaskInterface->m_temperatureLabel != nullptr)
     {
         lv_label_set_text_fmt(uiTaskInterface->m_temperatureLabel, "%ld.%ld °C", sensorData.m_temperature / 100, (sensorData.m_temperature % 100) / 10);
@@ -578,6 +564,29 @@ void handleSensorData(UiTaskInterface *uiTaskInterface, const SensorData &sensor
     {
         lv_label_set_text_fmt(uiTaskInterface->m_humidityLabel, "%ld%%", sensorData.m_humidity);
     }
+}
+
+void handleSensorData(UiTaskInterface *uiTaskInterface, const SensorData &sensorData, SensorAverageData &sensorAverageData)
+{
+    ESP_LOGI(TAG, "%ld.%ld °C %ld%% %ld hPa %u lx", sensorData.m_temperature / 100, sensorData.m_temperature % 100, sensorData.m_humidity, sensorData.m_pressure / 100, sensorData.m_illuminance);
+
+    sensorAverageData.m_sensorReadingsLastHour++;
+    if (sensorAverageData.m_sensorReadingsLastHour > 60)
+    {
+        sensorAverageData.m_temperatureAverageLastHourCentigrade = 0;
+        sensorAverageData.m_humidityAverageLastHour = 0U;
+        sensorAverageData.m_sensorReadingsLastHour = 1;
+        sensorAverageData.m_hoursTracked++;
+        if (sensorAverageData.m_hoursTracked >= 24U)
+        {
+            sensorAverageData.m_hoursTracked = 0U;
+        }
+    }
+    sensorAverageData.m_temperatureAverageLastHourCentigrade = (sensorAverageData.m_temperatureAverageLastHourCentigrade * (sensorAverageData.m_sensorReadingsLastHour - 1) + sensorData.m_temperature) / sensorAverageData.m_sensorReadingsLastHour;
+    sensorAverageData.m_humidityAverageLastHour = (sensorAverageData.m_humidityAverageLastHour * (sensorAverageData.m_sensorReadingsLastHour - 1) + sensorData.m_humidity) / sensorAverageData.m_sensorReadingsLastHour;
+
+    // Update sensor readings
+    handleCurrentSensorData(uiTaskInterface, sensorData);
     if (uiTaskInterface->m_temperatureAndHumidityChart != nullptr)
     {
         if (uiTaskInterface->m_temperatureSeries != nullptr)
@@ -647,8 +656,8 @@ void handleQueue(UiTaskInterface *uiTaskInterface, const QueueValueType &queueDa
     }
     else if (std::holds_alternative<SensorData>(queueData))
     {
-        const SensorData &sensorData = std::get<SensorData>(queueData);
-        handleSensorData(uiTaskInterface, sensorData, sensorAverageData);
+        lastSensorData = std::get<SensorData>(queueData);
+        handleSensorData(uiTaskInterface, lastSensorData, sensorAverageData);
     }
     else
     {
@@ -689,8 +698,12 @@ void task_lvgl(void *arg)
 
     UiTaskInterface *uiTaskInterface{static_cast<UiTaskInterface *>(arg)};
     lvgl_create_ui(uiTaskInterface);
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panelHandle, true));
 
+    // Reinit last sensor data to UI
+    handleCurrentSensorData(uiTaskInterface, lastSensorData);
+    
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panelHandle, true));
+    
     Backlight backlight{CONFIG_LCD_BACKLIGHT_GPIO, CONFIG_LCD_BACKLIGHT_HZ, uiTaskInterface->m_queue_in};
     backlight.init();
     backlight.power(true);
@@ -701,12 +714,14 @@ void task_lvgl(void *arg)
 
     while (true)
     {
-        TickType_t xTicksToWait{portMAX_DELAY};
+        // Fade-end interrupt cannot wake-up processor to put display IC to sleep and enter deep sleep
+        // Therefore, ensure periodic wake-up until display is dimmed off.
+        TickType_t xTicksToWait{pdMS_TO_TICKS(3000)};
         if (backlight.isOn())
         {
             // Only handle LVGL updates when backlight is actually on (and LCD controller is displaying)
             uint32_t taskDelayMs = lv_timer_handler();
-            xTicksToWait = pdMS_TO_TICKS(taskDelayMs);
+            xTicksToWait = std::min(xTicksToWait, pdMS_TO_TICKS(taskDelayMs));
         }
 
         QueueValueType queueData{};

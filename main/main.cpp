@@ -144,8 +144,7 @@ extern "C" void app_main(void)
     esp_pm_config_t pm_config{};
     ESP_ERROR_CHECK(esp_pm_get_configuration(&pm_config));
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
-    // TODO Fade-end callback currently never called when automatic light sleep is enabled
-    pm_config.light_sleep_enable = false;
+    pm_config.light_sleep_enable = true;
 #endif
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
     ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_MODEM, ESP_PD_OPTION_ON));

@@ -48,7 +48,7 @@ Holding the push-button for seven seconds or longer will perform a factory reset
 - [x] Wake display based on button
 - [ ] Save RC-Slow cycles of last successful SNTP
 - [ ] Wake display based on proximity reading from time-of-flight sensor
-- [ ] Deep sleep HP core
+- [x] Deep sleep HP core
 - [x] Re-evaluate power usage with Firebeetle
 - [ ] Measure air quality and/or CO2 content
 - [ ] Check feasibility of Matter integration, e.g. with Google Home to provide a warning based on humidity and temperature thresholds
