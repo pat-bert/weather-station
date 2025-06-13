@@ -33,7 +33,6 @@ namespace Ui
 
     RTC_DATA_ATTR SensorData lastSensorData{};
     RTC_DATA_ATTR uint32_t lastActiveTab{0U};
-    // TODO Take average data from ulp
 
     void Task::create_ui()
     {

@@ -310,7 +310,7 @@ void task_sntp(void *arg)
         wifi_calculate_qr_payload(service_name, username, pop, PROV_TRANSPORT_SOFTAP, wifiData.m_provisioningPayload, sizeof(wifiData.m_provisioningPayload));
 
         QueueValueType queueData{wifiData};
-        if (xQueueSend(wifiTaskInterface->m_measurementQueue_out, &queueData, portMAX_DELAY) != pdPASS)
+        if (xQueueSend(wifiTaskInterface->m_uiInputQueue, &queueData, portMAX_DELAY) != pdPASS)
         {
             ESP_LOGE(TAG, "Failed to send wifi data to queue");
         }

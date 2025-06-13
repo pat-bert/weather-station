@@ -89,27 +89,6 @@ static void ulpSoftwareInterruptCallback(void *arg)
 {
     // Clear the interrupt bit
     REG_SET_BIT(PMU_HP_INT_CLR_REG, PMU_SW_INT_CLR);
-
-    SensorTaskInterface *sensorTaskInterface = static_cast<SensorTaskInterface *>(arg);
-    SensorData sensorData{};
-
-    sensorData.m_illuminance = ulp_illuminance;
-    sensorData.m_humidity = ulp_humidity;
-    sensorData.m_temperature = static_cast<int32_t>(ulp_temperature);
-    sensorData.m_pressure = ulp_pressure;
-
-    for (size_t i = 0; i < numberOfSensorReadingsSaved; ++i)
-    {
-        sensorData.m_averageHumidity[i] = static_cast<uint32_t>((&ulp_averageHumidity)[i]);
-        sensorData.m_averageTemperatureCentrigrade[i] = static_cast<int32_t>((&ulp_averageTemperature)[i]);
-    }
-
-    sensorData.m_hoursTracked = ulp_hoursTracked;
-
-    QueueValueType queueData{sensorData};
-    BaseType_t pxHigherPriorityTaskWoken{pdFALSE};
-
-    xQueueSendFromISR(sensorTaskInterface->m_measurementQueue_out, &queueData, &pxHigherPriorityTaskWoken);
 }
 
 static void initLpCore(SensorTaskInterface *sensorTaskInterface)
@@ -147,8 +126,6 @@ static void initLpCore(SensorTaskInterface *sensorTaskInterface)
 
 extern "C" void app_main(void)
 {
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
     esp_pm_config_t pm_config{};
     ESP_ERROR_CHECK(esp_pm_get_configuration(&pm_config));
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
@@ -158,15 +135,18 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_MODEM, ESP_PD_OPTION_ON));
     ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_MODEM, ESP_PD_OPTION_OFF));
 
-    QueueHandle_t measurementQueue{xQueueCreate(5, sizeof(QueueValueType))};
-    configASSERT(measurementQueue);
+    QueueHandle_t uiInputQueue{xQueueCreate(5, sizeof(QueueValueType))};
+    configASSERT(uiInputQueue);
 
     EventGroupHandle_t sleepEventGroup{xEventGroupCreate()};
     configASSERT(sleepEventGroup);
 
-    SensorTaskInterface sensorTaskInterface{measurementQueue};
+    SensorTaskInterface sensorTaskInterface{uiInputQueue};
+    WifiTaskInterface wifiTaskInterface{uiInputQueue, sleepEventGroup};
 
     EventBits_t uxBitsToWaitFor{};
+
+    constexpr uint64_t sntpSyncTimeUs{1000000LL * 3600LL * CONFIG_SNTP_INTERVAL_HOURS};
 
     esp_sleep_wakeup_cause_t cause{esp_sleep_get_wakeup_cause()};
     switch (cause)
@@ -178,12 +158,12 @@ extern "C" void app_main(void)
 #if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
         initLpCore(&sensorTaskInterface);
 
-        WifiTaskInterface wifiTaskInterface{measurementQueue, sleepEventGroup};
         TaskHandle_t xHandleSntp{nullptr};
         xTaskCreate(task_sntp, "sntp", SNTP_TASK_STACK_SIZE, static_cast<void *>(&wifiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSntp);
         configASSERT(xHandleSntp);
 
         uxBitsToWaitFor |= SNTP_READY_FOR_DEEP_SLEEP;
+
         break;
 #endif
     }
@@ -196,13 +176,33 @@ extern "C" void app_main(void)
     case ESP_SLEEP_WAKEUP_GPIO:
     {
         ESP_LOGI(TAG, "GPIO wakeup");
-        // TODO Start UI with backlight on
+        SensorData sensorData{};
+        sensorData.m_illuminance = ulp_illuminance;
+        sensorData.m_humidity = ulp_humidity;
+        sensorData.m_temperature = static_cast<int32_t>(ulp_temperature);
+        sensorData.m_pressure = ulp_pressure;
+
+        for (size_t i = 0; i < numberOfSensorReadingsSaved; ++i)
+        {
+            sensorData.m_averageHumidity[i] = static_cast<uint32_t>((&ulp_averageHumidity)[i]);
+            sensorData.m_averageTemperatureCentrigrade[i] = static_cast<int32_t>((&ulp_averageTemperature)[i]);
+        }
+
+        sensorData.m_hoursTracked = ulp_hoursTracked;
+
+        QueueValueType queueData{sensorData};
+        xQueueSend(uiInputQueue, &queueData, portMAX_DELAY);
         break;
     }
     case ESP_SLEEP_WAKEUP_TIMER:
     {
         ESP_LOGI(TAG, "Timer wakeup");
-        // TODO Synchronize SNTP once per day/after shorter period if it failed last time
+        TaskHandle_t xHandleSntp{nullptr};
+        xTaskCreate(task_sntp, "sntp", SNTP_TASK_STACK_SIZE, static_cast<void *>(&wifiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleSntp);
+        configASSERT(xHandleSntp);
+
+        uxBitsToWaitFor |= SNTP_READY_FOR_DEEP_SLEEP;
+
         break;
     }
     default:
@@ -219,7 +219,7 @@ extern "C" void app_main(void)
 #endif
 
     Ui::UiTaskInterface uiTaskInterface{};
-    uiTaskInterface.m_queue_in = sensorTaskInterface.m_measurementQueue_out;
+    uiTaskInterface.m_queue_in = sensorTaskInterface.m_uiInputQueue;
     uiTaskInterface.m_sleepEventGroup = sleepEventGroup;
     TaskHandle_t xHandleDisplay{nullptr};
     xTaskCreate(Ui::run_task_wrapper, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleDisplay);
@@ -245,6 +245,12 @@ extern "C" void app_main(void)
 
     // Enable button wake-up also from deep sleep and hold pin
     ESP_ERROR_CHECK(esp_deep_sleep_enable_gpio_wakeup(1ULL << CONFIG_BUTTON_GPIO, ESP_GPIO_WAKEUP_GPIO_LOW));
+
+    if ((ESP_SLEEP_WAKEUP_UNDEFINED == cause) || (ESP_SLEEP_WAKEUP_TIMER == cause))
+    {
+        // Sync SNTP after certain period w.r.t. first boot or last sync attempt
+        ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(sntpSyncTimeUs));
+    }
 
     ESP_LOGI(TAG, "Entering deep sleep");
     esp_deep_sleep_start();

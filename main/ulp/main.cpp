@@ -187,7 +187,7 @@ extern "C" int main(void)
     averageTemperature[hoursTracked] = (averageTemperature[hoursTracked] * (sensorReadingsLastHour - 1) + temperature) / sensorReadingsLastHour;
     averageHumidity[hoursTracked] = (averageHumidity[hoursTracked] * (sensorReadingsLastHour - 1) + humidity) / sensorReadingsLastHour;
 
-    ulp_lp_core_wakeup_main_processor();
+    // ulp_lp_core_wakeup_main_processor();
 
     return 0;
 

@@ -33,6 +33,13 @@ The LCD backlight is automatically dimmed over a parametrized duration using gam
 
 Holding the push-button for seven seconds or longer will perform a factory reset after which the Wi-Fi credentials are lost and the QR-code will be shown again.
 
+## Wake-up sources
+
+1. Reset starts LP-core and triggers all tasks once
+2. Timer wakeup after CONFIG_SNTP_INTERVAL_HOURS triggers another SNTP sync
+3. GPIO wakeup from user button, sends sensor data to UI and triggers UI task
+4. LP-Core wakeup (currently unused, could be used for special sensor event)
+
 ## Configuration
 
 - Pin mappings
@@ -48,7 +55,8 @@ Holding the push-button for seven seconds or longer will perform a factory reset
 - [x] Read sensors using LP core
 - [x] Sleep display and turn off backlight after n seconds of user inactivity
 - [x] Wake display based on button
-- [ ] Save RC-Slow cycles of last successful SNTP
+- [x] Wake-up repeatedly for SNTP sync
+- [ ] Wake-up earlier if SNTP failed alst time
 - [ ] Wake display based on proximity reading from time-of-flight sensor
 - [x] Deep sleep HP core
 - [x] Re-evaluate power usage with Firebeetle

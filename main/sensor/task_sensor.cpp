@@ -232,7 +232,7 @@ void task_sensor(void *arg)
         ESP_LOGI(TAG, "%ld.%ld °C %ld%% %ld hPa %u lx", sensorData.m_temperature / 100, sensorData.m_temperature % 100, sensorData.m_humidity, sensorData.m_pressure / 100, sensorData.m_illuminance);
 
         QueueValueType queueData{sensorData};
-        if (xQueueSend(sensorTaskInterface->m_measurementQueue_out, &queueData, portMAX_DELAY) != pdPASS)
+        if (xQueueSend(sensorTaskInterface->m_uiInputQueue, &queueData, portMAX_DELAY) != pdPASS)
         {
             ESP_LOGE(TAG, "Failed to send measurement data to queue");
         }

@@ -6,7 +6,7 @@
 
 struct SensorTaskInterface
 {
-    QueueHandle_t m_measurementQueue_out;
+    QueueHandle_t m_uiInputQueue;
 };
 
 #endif
