@@ -46,7 +46,7 @@ static void IRAM_ATTR singleClickCallback(void *button_handle, void *args)
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    UiTaskInterface *uiTaskInterface = static_cast<UiTaskInterface *>(args);
+    Ui::UiTaskInterface *uiTaskInterface = static_cast<Ui::UiTaskInterface *>(args);
 
     if (uiTaskInterface != nullptr)
     {
@@ -64,7 +64,7 @@ static void IRAM_ATTR singleClickCallback(void *button_handle, void *args)
     }
 }
 
-static void initButton(UiTaskInterface &uiTaskInterface)
+static void initButton(Ui::UiTaskInterface &uiTaskInterface)
 {
     button_config_t gpio_btn_cfg{};
     gpio_btn_cfg.type = BUTTON_TYPE_GPIO;
@@ -210,11 +210,11 @@ extern "C" void app_main(void)
     configASSERT(xHandleSensor);
 #endif
 
-    UiTaskInterface uiTaskInterface{};
+    Ui::UiTaskInterface uiTaskInterface{};
     uiTaskInterface.m_queue_in = sensorTaskInterface.m_measurementQueue_out;
     uiTaskInterface.m_sleepEventGroup = sleepEventGroup;
     TaskHandle_t xHandleDisplay{nullptr};
-    xTaskCreate(task_lvgl, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleDisplay);
+    xTaskCreate(Ui::run_task_wrapper, "lvgl", LVGL_TASK_STACK_SIZE, static_cast<void *>(&uiTaskInterface), tskIDLE_PRIORITY + 1, &xHandleDisplay);
     configASSERT(xHandleDisplay);
     uxBitsToWaitFor |= UI_READY_FOR_DEEP_SLEEP;
 
