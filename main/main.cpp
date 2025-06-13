@@ -98,6 +98,14 @@ static void ulpSoftwareInterruptCallback(void *arg)
     sensorData.m_temperature = static_cast<int32_t>(ulp_temperature);
     sensorData.m_pressure = ulp_pressure;
 
+    for (size_t i = 0; i < numberOfSensorReadingsSaved; ++i)
+    {
+        sensorData.m_averageHumidity[i] = static_cast<uint32_t>((&ulp_averageHumidity)[i]);
+        sensorData.m_averageTemperatureCentrigrade[i] = static_cast<int32_t>((&ulp_averageTemperature)[i]);
+    }
+
+    sensorData.m_hoursTracked = ulp_hoursTracked;
+
     QueueValueType queueData{sensorData};
     BaseType_t pxHigherPriorityTaskWoken{pdFALSE};
 

@@ -36,15 +36,6 @@ namespace Ui
     constexpr size_t numberOfBufferElements{(CONFIG_LCD_H_RES * CONFIG_LCD_V_RES) / bufferDisplayFraction};
     constexpr size_t bufferSize{static_cast<size_t>(numberOfBufferElements * LV_COLOR_FORMAT_GET_SIZE(LV_COLOR_FORMAT_RGB565))};
 
-    struct SensorAverageData
-    {
-        int32_t m_temperatureAverageLastHourCentigrade{0};
-        uint32_t m_humidityAverageLastHour{0U};
-
-        uint8_t m_sensorReadingsLastHour{0U};
-        uint8_t m_hoursTracked{0U};
-    };
-
     struct FlushCallbackData
     {
         lv_display_t *m_display;
@@ -91,7 +82,9 @@ namespace Ui
     protected:
         void create_ui();
 
-        void handleQueue(const QueueValueType &queueData, SensorAverageData &sensorAverageData);
+        void handleQueue(const QueueValueType &queueData);
+
+        void handleSensorData(UiHandles *uiHandles, const SensorData &sensorData);
 
     private:
         UiTaskInterface *m_uiTaskInterface{nullptr};
@@ -103,6 +96,9 @@ namespace Ui
 
         void *m_displayBuffer1{nullptr};
         void *m_displayBuffer2{nullptr};
+
+        int32_t m_temperatureBuffer[numberOfSensorReadingsSaved]{};
+        int32_t m_humidityBuffer[numberOfSensorReadingsSaved]{};
     };
 
     static void run_task_wrapper(void *arg)

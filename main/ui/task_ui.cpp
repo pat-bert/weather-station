@@ -26,9 +26,8 @@ LV_IMG_DECLARE(drop);
 
 namespace Ui
 {
-    constexpr uint16_t numberOfSensorReadingsSaved{24};
     constexpr uint8_t hoursTickDivider{6};
-    constexpr uint16_t numberMajorTicksHoursHistory{numberOfSensorReadingsSaved / hoursTickDivider + 1};
+    constexpr uint16_t numberMajorTicksHoursHistory{(numberOfSensorReadingsSaved - 1) / hoursTickDivider + 1};
 
     const char TAG[] = "lvgl";
 
@@ -370,7 +369,7 @@ namespace Ui
                 lv_scale_set_mode(scaleBottom, LV_SCALE_MODE_HORIZONTAL_BOTTOM);
                 lv_obj_set_size(scaleBottom, chartWidth, labelPaddingTime);
                 lv_obj_align_to(scaleBottom, chart, LV_ALIGN_OUT_BOTTOM_MID, 0, 0);
-                lv_scale_set_total_tick_count(scaleBottom, numberOfSensorReadingsSaved + 1);
+                lv_scale_set_total_tick_count(scaleBottom, numberOfSensorReadingsSaved);
                 lv_scale_set_major_tick_every(scaleBottom, hoursTickDivider);
                 lv_obj_add_style(scaleBottom, &styleLabel, LV_PART_INDICATOR);
                 lv_obj_set_style_length(scaleBottom, 10, LV_PART_INDICATOR);
@@ -425,6 +424,9 @@ namespace Ui
 
             lv_chart_series_t *temperatureSeries = lv_chart_add_series(chart, lv_palette_main(LV_PALETTE_RED), LV_CHART_AXIS_PRIMARY_Y);
             lv_chart_series_t *humiditySeries = lv_chart_add_series(chart, lv_palette_main(LV_PALETTE_BLUE), LV_CHART_AXIS_SECONDARY_Y);
+
+            lv_chart_set_ext_y_array(chart, temperatureSeries, m_temperatureBuffer);
+            lv_chart_set_ext_y_array(chart, humiditySeries, m_humidityBuffer);
 
             lv_chart_set_x_start_point(chart, temperatureSeries, numberOfSensorReadingsSaved - 1);
             lv_chart_set_x_start_point(chart, humiditySeries, numberOfSensorReadingsSaved - 1);
@@ -566,52 +568,27 @@ namespace Ui
         }
     }
 
-    void handleSensorData(UiHandles *uiHandles, const SensorData &sensorData, SensorAverageData &sensorAverageData)
+    void Task::handleSensorData(UiHandles *uiHandles, const SensorData &sensorData)
     {
         ESP_LOGI(TAG, "%ld.%ld °C %ld%% %ld hPa %u lx", sensorData.m_temperature / 100, sensorData.m_temperature % 100, sensorData.m_humidity, sensorData.m_pressure / 100, sensorData.m_illuminance);
-
-        sensorAverageData.m_sensorReadingsLastHour++;
-        if (sensorAverageData.m_sensorReadingsLastHour > 60)
-        {
-            sensorAverageData.m_temperatureAverageLastHourCentigrade = 0;
-            sensorAverageData.m_humidityAverageLastHour = 0U;
-            sensorAverageData.m_sensorReadingsLastHour = 1;
-            sensorAverageData.m_hoursTracked++;
-            if (sensorAverageData.m_hoursTracked >= 24U)
-            {
-                sensorAverageData.m_hoursTracked = 0U;
-            }
-        }
-        sensorAverageData.m_temperatureAverageLastHourCentigrade = (sensorAverageData.m_temperatureAverageLastHourCentigrade * (sensorAverageData.m_sensorReadingsLastHour - 1) + sensorData.m_temperature) / sensorAverageData.m_sensorReadingsLastHour;
-        sensorAverageData.m_humidityAverageLastHour = (sensorAverageData.m_humidityAverageLastHour * (sensorAverageData.m_sensorReadingsLastHour - 1) + sensorData.m_humidity) / sensorAverageData.m_sensorReadingsLastHour;
 
         // Update sensor readings
         handleCurrentSensorData(uiHandles, sensorData);
         if (uiHandles->m_temperatureAndHumidityChart != nullptr)
         {
-            if (uiHandles->m_temperatureSeries != nullptr)
+            uint32_t startIndex = (numberOfSensorReadingsSaved - 1);
+
+            for (uint32_t i = 0; i <= sensorData.m_hoursTracked; ++i)
             {
-                if (sensorAverageData.m_sensorReadingsLastHour == 1)
-                {
-                    lv_chart_set_next_value(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_temperatureSeries, sensorAverageData.m_temperatureAverageLastHourCentigrade / 100);
-                }
-                else
-                {
-                    lv_chart_set_value_by_id(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_temperatureSeries, (numberOfSensorReadingsSaved - 1 + sensorAverageData.m_hoursTracked) % numberOfSensorReadingsSaved, sensorAverageData.m_temperatureAverageLastHourCentigrade / 100);
-                }
+                uint32_t index = (startIndex + i) % numberOfSensorReadingsSaved;
+                m_temperatureBuffer[index] = sensorData.m_averageTemperatureCentrigrade[i] / 100;
+                m_humidityBuffer[index] = sensorData.m_averageHumidity[i];
             }
 
-            if (uiHandles->m_humiditySeries != nullptr)
-            {
-                if (sensorAverageData.m_sensorReadingsLastHour == 1)
-                {
-                    lv_chart_set_next_value(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_humiditySeries, sensorAverageData.m_humidityAverageLastHour);
-                }
-                else
-                {
-                    lv_chart_set_value_by_id(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_humiditySeries, (numberOfSensorReadingsSaved - 1 + sensorAverageData.m_hoursTracked) % numberOfSensorReadingsSaved, sensorAverageData.m_humidityAverageLastHour);
-                }
-            }
+            uint32_t startPoint = (startIndex + sensorData.m_hoursTracked) % numberOfSensorReadingsSaved;
+            lv_chart_set_x_start_point(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_temperatureSeries, sensorData.m_hoursTracked);
+            lv_chart_set_x_start_point(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_humiditySeries, sensorData.m_hoursTracked);
+            lv_chart_refresh(uiHandles->m_temperatureAndHumidityChart);
         }
     }
 
@@ -635,7 +612,7 @@ namespace Ui
         }
     }
 
-    void Task::handleQueue(const QueueValueType &queueData, SensorAverageData &sensorAverageData)
+    void Task::handleQueue(const QueueValueType &queueData)
     {
         handleCommon(&m_uiHandles);
 
@@ -657,7 +634,7 @@ namespace Ui
         else if (std::holds_alternative<SensorData>(queueData))
         {
             lastSensorData = std::get<SensorData>(queueData);
-            handleSensorData(&m_uiHandles, lastSensorData, sensorAverageData);
+            handleSensorData(&m_uiHandles, lastSensorData);
         }
         else
         {
@@ -706,8 +683,6 @@ namespace Ui
         vTaskDelay(pdMS_TO_TICKS(10));
         m_backlight.dim(0, CONFIG_LCD_FADE_TIME_SECONDS * 1000);
 
-        SensorAverageData sensorAverageData{};
-
         while (true)
         {
             // Fade-end interrupt cannot wake-up processor to put display IC to sleep and enter deep sleep
@@ -723,7 +698,7 @@ namespace Ui
             QueueValueType queueData{};
             if (xQueueReceive(m_uiTaskInterface->m_queue_in, &queueData, xTicksToWait) == pdPASS)
             {
-                handleQueue(queueData, sensorAverageData);
+                handleQueue(queueData);
             }
 
             ESP_LOGI(TAG, "Free stack: %u", uxTaskGetStackHighWaterMark(nullptr));

@@ -19,6 +19,8 @@ struct FadeData
     bool m_requestLcdControllerOff;
 };
 
+constexpr uint16_t numberOfSensorReadingsSaved{25};
+
 struct SensorData
 {
 #ifdef BME280_DOUBLE_ENABLE
@@ -31,6 +33,10 @@ struct SensorData
     uint32_t m_humidity;   // Humidity in RH%
 #endif
     uint16_t m_illuminance;
+
+    uint32_t m_averageHumidity[numberOfSensorReadingsSaved];
+    uint32_t m_averageTemperatureCentrigrade[numberOfSensorReadingsSaved];
+    uint32_t m_hoursTracked = 0;
 };
 
 using QueueValueType = std::variant<SensorData, ButtonData, WifiData, FadeData>;

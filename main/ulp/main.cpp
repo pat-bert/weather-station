@@ -1,5 +1,6 @@
 #include "../bh1750/bh1750.hpp"
 #include "../bme280/bme280.h"
+#include "../interfaces/interface_sensor.hpp"
 
 #include "ulp_lp_core_i2c.h"
 #include "ulp_lp_core_utils.h"
@@ -7,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <sdkconfig.h>
+#include <queue>
 
 #define ESP_LP_GOTO_ON_ERROR(x, goto_tag, format, ...)                                      \
     do                                                                                      \
@@ -36,6 +38,11 @@ volatile uint32_t illuminance = 0;
 volatile uint32_t pressure = 0;
 volatile int32_t temperature = 0;
 volatile uint32_t humidity = 0;
+
+volatile uint32_t averageHumidity[numberOfSensorReadingsSaved];
+volatile int32_t averageTemperature[numberOfSensorReadingsSaved];
+volatile uint32_t sensorReadingsLastHour = 0;
+volatile uint32_t hoursTracked = 0;
 
 static BME280_INTF_RET_TYPE bme280_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t length, void *intf_ptr)
 {
@@ -154,6 +161,31 @@ extern "C" int main(void)
     humidity = measurement.humidity;
 #endif
     illuminance = static_cast<uint32_t>(illuminanceReading);
+
+    sensorReadingsLastHour++;
+    if (sensorReadingsLastHour > 60)
+    {
+        if (hoursTracked < numberOfSensorReadingsSaved)
+        {
+            hoursTracked++;
+        }
+        else
+        {
+            // Shift the average data to the left
+            for (uint32_t i = 0; i < numberOfSensorReadingsSaved - 1; ++i)
+            {
+                averageTemperature[i] = averageTemperature[i + 1];
+                averageHumidity[i] = averageHumidity[i + 1];
+            }
+        }
+
+        averageTemperature[hoursTracked] = 0;
+        averageHumidity[hoursTracked] = 0U;
+        sensorReadingsLastHour = 1;
+    }
+
+    averageTemperature[hoursTracked] = (averageTemperature[hoursTracked] * (sensorReadingsLastHour - 1) + temperature) / sensorReadingsLastHour;
+    averageHumidity[hoursTracked] = (averageHumidity[hoursTracked] * (sensorReadingsLastHour - 1) + humidity) / sensorReadingsLastHour;
 
     ulp_lp_core_wakeup_main_processor();
 
