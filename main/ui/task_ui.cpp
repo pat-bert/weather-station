@@ -33,8 +33,8 @@ namespace Ui
     const char TAG[] = "lvgl";
 
     RTC_DATA_ATTR SensorData lastSensorData{};
+    RTC_DATA_ATTR uint32_t lastActiveTab{0U};
     // TODO Take average data from ulp
-    // TODO Remember last viewed tab
 
     void Task::create_ui()
     {
@@ -504,12 +504,14 @@ namespace Ui
     {
         if (backlight.isOn() && buttonData.m_buttonPressed && (uiHandles->m_tabview != nullptr))
         {
-            uint16_t current_tab = lv_tabview_get_tab_act(uiHandles->m_tabview);
-            uint16_t next_tab = current_tab + 1;
+            uint32_t current_tab = lv_tabview_get_tab_act(uiHandles->m_tabview);
+            uint32_t next_tab = current_tab + 1;
             if (next_tab >= lv_tabview_get_tab_count(uiHandles->m_tabview))
             {
                 next_tab = 0;
             }
+
+            lastActiveTab = next_tab;
             lv_tabview_set_active(uiHandles->m_tabview, next_tab, LV_ANIM_OFF);
         }
 
@@ -694,8 +696,9 @@ namespace Ui
     {
         create_ui();
 
-        // Reinit last sensor data to UI
+        // Restore last UI data
         handleCurrentSensorData(&m_uiHandles, lastSensorData);
+        lv_tabview_set_active(m_uiHandles.m_tabview, lastActiveTab, LV_ANIM_OFF);
 
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(m_panelHandle, true));
 

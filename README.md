@@ -4,13 +4,15 @@ This project provides the software to run a smart weather station with a small c
 
 ## Features
 
-- Measurement of ambient temperature, relative humidity, barometric pressure
-- Automatic time and date synchronisation over Wi-Fi
-- Automatic light sleep
+- Measurement of ambient temperature, relative humidity, barometric pressure and lux
+- Automatic time and date synchronisation over Wi-Fi specific to the configured timezone
+- Automatic light and deep sleep
 - Color display with three views:
   - Welcome page
   - Sensor dashboard with current readings
   - Sensor history over the last 24 hours
+  - Last viewed tab is stored
+  - Automatic gamma-dimming over 15 s
 
 ## Details
 
