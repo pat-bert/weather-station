@@ -89,6 +89,29 @@ static void ulpSoftwareInterruptCallback(void *arg)
 {
     // Clear the interrupt bit
     REG_SET_BIT(PMU_HP_INT_CLR_REG, PMU_SW_INT_CLR);
+
+    SensorTaskInterface *sensorTaskInterface = static_cast<SensorTaskInterface *>(arg);
+    SensorData sensorData{};
+    sensorData.m_illuminance = ulp_illuminance;
+    sensorData.m_humidity = ulp_humidity;
+    sensorData.m_temperature = static_cast<int32_t>(ulp_temperature);
+    sensorData.m_pressure = ulp_pressure;
+
+    for (size_t i = 0; i < numberOfSensorReadingsSaved; ++i)
+    {
+        sensorData.m_averageHumidity[i] = static_cast<uint32_t>((&ulp_averageHumidity)[i]);
+        sensorData.m_averageTemperatureCentrigrade[i] = static_cast<int32_t>((&ulp_averageTemperature)[i]);
+    }
+
+    sensorData.m_hoursTracked = ulp_hoursTracked;
+
+    QueueValueType queueData{sensorData};
+    BaseType_t pxHigherPriorityTaskWoken = pdFALSE;
+    xQueueSendFromISR(sensorTaskInterface->m_uiInputQueue, &queueData, &pxHigherPriorityTaskWoken);
+    if (pxHigherPriorityTaskWoken)
+    {
+        portYIELD_FROM_ISR();
+    }
 }
 
 static void initLpCore(SensorTaskInterface *sensorTaskInterface)
@@ -99,7 +122,7 @@ static void initLpCore(SensorTaskInterface *sensorTaskInterface)
     ESP_ERROR_CHECK(esp_intr_enable(interruptHandle));
     REG_SET_BIT(PMU_HP_INT_ENA_REG, PMU_SW_INT_ENA);
 
-    ESP_ERROR_CHECK(esp_sleep_enable_ulp_wakeup());
+    // ESP_ERROR_CHECK(esp_sleep_enable_ulp_wakeup());
 
     lp_core_i2c_cfg_t busConfigLpCore{};
     busConfigLpCore.i2c_pin_cfg.scl_io_num = static_cast<gpio_num_t>(CONFIG_SCL_LP_GPIO);

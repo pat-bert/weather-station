@@ -577,6 +577,8 @@ namespace Ui
         {
             uint32_t startIndex = (numberOfSensorReadingsSaved - 1);
 
+            ESP_LOGI(TAG, "Updating chart with %lu hours of data", sensorData.m_hoursTracked);
+
             for (uint32_t i = 0; i <= sensorData.m_hoursTracked; ++i)
             {
                 uint32_t index = (startIndex + i) % numberOfSensorReadingsSaved;
@@ -584,7 +586,6 @@ namespace Ui
                 m_humidityBuffer[index] = sensorData.m_averageHumidity[i];
             }
 
-            uint32_t startPoint = (startIndex + sensorData.m_hoursTracked) % numberOfSensorReadingsSaved;
             lv_chart_set_x_start_point(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_temperatureSeries, sensorData.m_hoursTracked);
             lv_chart_set_x_start_point(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_humiditySeries, sensorData.m_hoursTracked);
             lv_chart_refresh(uiHandles->m_temperatureAndHumidityChart);
