@@ -165,7 +165,7 @@ extern "C" int main(void)
     sensorReadingsLastHour++;
     if (sensorReadingsLastHour > 60)
     {
-        if (hoursTracked < numberOfSensorReadingsSaved)
+        if (hoursTracked < numberOfSensorReadingsSaved - 1)
         {
             hoursTracked++;
         }
@@ -187,7 +187,8 @@ extern "C" int main(void)
     averageTemperature[hoursTracked] = (averageTemperature[hoursTracked] * (sensorReadingsLastHour - 1) + temperature) / sensorReadingsLastHour;
     averageHumidity[hoursTracked] = (averageHumidity[hoursTracked] * (sensorReadingsLastHour - 1) + humidity) / sensorReadingsLastHour;
 
-    // ulp_lp_core_wakeup_main_processor();
+    // Trigger interrupt
+    ulp_lp_core_wakeup_main_processor();
 
     return 0;
 

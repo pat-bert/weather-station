@@ -1,5 +1,7 @@
 #include "task_ui.hpp"
 
+#include "ulp_lp_sensor.h"
+
 #include "st7735/esp_lcd_panel_custom_vendor.h"
 
 #include "driver/spi_master.h"
@@ -577,16 +579,18 @@ namespace Ui
         {
             uint32_t startIndex = (numberOfSensorReadingsSaved - 1);
 
-            for (uint32_t i = 0; i <= sensorData.m_hoursTracked; ++i)
+            uint32_t hoursTracked = ulp_hoursTracked;
+            ESP_LOGI(TAG, "Updating chart with %lu hours of data", hoursTracked);
+
+            for (uint32_t i = 0; i <= hoursTracked; ++i)
             {
                 uint32_t index = (startIndex + i) % numberOfSensorReadingsSaved;
-                m_temperatureBuffer[index] = sensorData.m_averageTemperatureCentrigrade[i] / 100;
-                m_humidityBuffer[index] = sensorData.m_averageHumidity[i];
+                m_temperatureBuffer[index] = static_cast<int32_t>((&ulp_averageTemperature)[i]) / 100;
+                m_humidityBuffer[index] = static_cast<uint32_t>((&ulp_averageHumidity)[i]);
             }
 
-            uint32_t startPoint = (startIndex + sensorData.m_hoursTracked) % numberOfSensorReadingsSaved;
-            lv_chart_set_x_start_point(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_temperatureSeries, sensorData.m_hoursTracked);
-            lv_chart_set_x_start_point(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_humiditySeries, sensorData.m_hoursTracked);
+            lv_chart_set_x_start_point(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_temperatureSeries, hoursTracked);
+            lv_chart_set_x_start_point(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_humiditySeries, hoursTracked);
             lv_chart_refresh(uiHandles->m_temperatureAndHumidityChart);
         }
     }
@@ -673,7 +677,8 @@ namespace Ui
         create_ui();
 
         // Restore last UI data
-        handleCurrentSensorData(&m_uiHandles, lastSensorData);
+        handleSensorData(&m_uiHandles, lastSensorData);
+
         lv_tabview_set_active(m_uiHandles.m_tabview, lastActiveTab, LV_ANIM_OFF);
 
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(m_panelHandle, true));

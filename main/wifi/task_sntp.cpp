@@ -210,10 +210,6 @@ void task_sntp(void *arg)
 {
     const WifiTaskInterface *wifiTaskInterface{static_cast<WifiTaskInterface *>(arg)};
 
-    // Set timezone
-    setenv("TZ", CONFIG_TIMEZONE, 1);
-    tzset();
-
     /* Initialize NVS partition */
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)

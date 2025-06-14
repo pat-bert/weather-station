@@ -26,6 +26,7 @@
 #include "freertos/queue.h"
 
 #include <algorithm>
+#include <chrono>
 
 #define STACK_SIZE_SENSOR_TASK (3000)
 #define LVGL_TASK_STACK_SIZE (5500)
@@ -89,6 +90,21 @@ static void ulpSoftwareInterruptCallback(void *arg)
 {
     // Clear the interrupt bit
     REG_SET_BIT(PMU_HP_INT_CLR_REG, PMU_SW_INT_CLR);
+
+    SensorTaskInterface *sensorTaskInterface = static_cast<SensorTaskInterface *>(arg);
+    SensorData sensorData{};
+    sensorData.m_illuminance = ulp_illuminance;
+    sensorData.m_humidity = ulp_humidity;
+    sensorData.m_temperature = static_cast<int32_t>(ulp_temperature);
+    sensorData.m_pressure = ulp_pressure;
+
+    QueueValueType queueData{sensorData};
+    BaseType_t pxHigherPriorityTaskWoken = pdFALSE;
+    xQueueSendFromISR(sensorTaskInterface->m_uiInputQueue, &queueData, &pxHigherPriorityTaskWoken);
+    if (pxHigherPriorityTaskWoken)
+    {
+        portYIELD_FROM_ISR();
+    }
 }
 
 static void initLpCore(SensorTaskInterface *sensorTaskInterface)
@@ -99,7 +115,7 @@ static void initLpCore(SensorTaskInterface *sensorTaskInterface)
     ESP_ERROR_CHECK(esp_intr_enable(interruptHandle));
     REG_SET_BIT(PMU_HP_INT_ENA_REG, PMU_SW_INT_ENA);
 
-    ESP_ERROR_CHECK(esp_sleep_enable_ulp_wakeup());
+    // ESP_ERROR_CHECK(esp_sleep_enable_ulp_wakeup());
 
     lp_core_i2c_cfg_t busConfigLpCore{};
     busConfigLpCore.i2c_pin_cfg.scl_io_num = static_cast<gpio_num_t>(CONFIG_SCL_LP_GPIO);
@@ -135,7 +151,11 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_MODEM, ESP_PD_OPTION_ON));
     ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_MODEM, ESP_PD_OPTION_OFF));
 
-    QueueHandle_t uiInputQueue{xQueueCreate(5, sizeof(QueueValueType))};
+    // Set timezone
+    setenv("TZ", CONFIG_TIMEZONE, 1);
+    tzset();
+
+    QueueHandle_t uiInputQueue{xQueueCreate(8, sizeof(QueueValueType))};
     configASSERT(uiInputQueue);
 
     EventGroupHandle_t sleepEventGroup{xEventGroupCreate()};
@@ -146,7 +166,7 @@ extern "C" void app_main(void)
 
     EventBits_t uxBitsToWaitFor{};
 
-    constexpr uint64_t sntpSyncTimeUs{1000000LL * 3600LL * CONFIG_SNTP_INTERVAL_HOURS};
+    constexpr uint64_t sntpSyncTimeUs{1000000ULL * 3600ULL * static_cast<uint64_t>(CONFIG_SNTP_INTERVAL_HOURS)};
 
     esp_sleep_wakeup_cause_t cause{esp_sleep_get_wakeup_cause()};
     switch (cause)
@@ -176,22 +196,6 @@ extern "C" void app_main(void)
     case ESP_SLEEP_WAKEUP_GPIO:
     {
         ESP_LOGI(TAG, "GPIO wakeup");
-        SensorData sensorData{};
-        sensorData.m_illuminance = ulp_illuminance;
-        sensorData.m_humidity = ulp_humidity;
-        sensorData.m_temperature = static_cast<int32_t>(ulp_temperature);
-        sensorData.m_pressure = ulp_pressure;
-
-        for (size_t i = 0; i < numberOfSensorReadingsSaved; ++i)
-        {
-            sensorData.m_averageHumidity[i] = static_cast<uint32_t>((&ulp_averageHumidity)[i]);
-            sensorData.m_averageTemperatureCentrigrade[i] = static_cast<int32_t>((&ulp_averageTemperature)[i]);
-        }
-
-        sensorData.m_hoursTracked = ulp_hoursTracked;
-
-        QueueValueType queueData{sensorData};
-        xQueueSend(uiInputQueue, &queueData, portMAX_DELAY);
         break;
     }
     case ESP_SLEEP_WAKEUP_TIMER:
