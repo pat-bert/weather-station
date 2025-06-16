@@ -25,4 +25,4 @@ jobs:
 
     # Run Cppcheck
     - name: Run Cppcheck
-      run: cppcheck --enable=all --inconclusive --std=c++23 --quiet --project=build/compile_commands.json .
+      run: cppcheck --enable=all --inconclusive --std=c++23 --quiet --project=/app/pat-bert/weather-station/build/compile_commands.json .
