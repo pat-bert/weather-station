@@ -1,5 +1,7 @@
 #include "task_ui.hpp"
 
+#include "lunar_phase.hpp"
+
 #include "ulp_lp_sensor.h"
 
 #include "st7735/esp_lcd_panel_custom_vendor.h"
@@ -23,8 +25,13 @@
 
 LV_FONT_DECLARE(lv_font_montserrat_8_german)
 
-LV_IMG_DECLARE(sun);
 LV_IMG_DECLARE(drop);
+LV_IMG_DECLARE(full_moon);
+LV_IMG_DECLARE(half_moon);
+LV_IMG_DECLARE(new_moon);
+LV_IMG_DECLARE(sun);
+LV_IMG_DECLARE(waxing_crescent);
+LV_IMG_DECLARE(waxing_gibbous);
 
 namespace Ui
 {
@@ -436,6 +443,17 @@ namespace Ui
             m_uiHandles.m_temperatureSeries = temperatureSeries;
             m_uiHandles.m_humiditySeries = humiditySeries;
         }
+
+        lv_obj_t *lunarPhaseTab = lv_tabview_add_tab(tabview, "");
+        lv_obj_set_size(lunarPhaseTab, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
+        lv_obj_set_style_pad_all(lunarPhaseTab, 0, 0);
+        lv_obj_center(lunarPhaseTab);
+
+        lv_obj_t *lunarPhaseImage = lv_image_create(lunarPhaseTab);
+        lv_image_set_src(lunarPhaseImage, &new_moon);
+        lv_obj_set_size(lunarPhaseImage, CONFIG_LCD_H_RES, CONFIG_LCD_V_RES);
+        lv_obj_center(lunarPhaseImage);
+        m_uiHandles.m_lunarPhaseImage = lunarPhaseImage;
     }
 
     static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
@@ -612,6 +630,44 @@ namespace Ui
         if ((timeinfo->tm_year > (1970 - 1900)) && (uiHandles->m_timeLabel != nullptr))
         {
             lv_label_set_text(uiHandles->m_timeLabel, timeStringBuffer);
+        }
+
+        if (uiHandles->m_lunarPhaseImage != nullptr)
+        {
+            switch (LunarPhaseCalculator::calculate(now))
+            {
+            case LunarPhase::NewMoon:
+                lv_image_set_src(uiHandles->m_lunarPhaseImage, &new_moon);
+                break;
+            case LunarPhase::WaxingCrescent:
+                lv_image_set_src(uiHandles->m_lunarPhaseImage, &waxing_crescent);
+                break;
+            case LunarPhase::FirstQuarter:
+                lv_image_set_src(uiHandles->m_lunarPhaseImage, &half_moon);
+                lv_image_set_rotation(uiHandles->m_lunarPhaseImage, 1800);
+                break;
+            case LunarPhase::WaxingGibbous:
+                lv_image_set_src(uiHandles->m_lunarPhaseImage, &waxing_gibbous);
+                break;
+            case LunarPhase::FullMoon:
+                lv_image_set_src(uiHandles->m_lunarPhaseImage, &full_moon);
+                break;
+            case LunarPhase::WaningGibbous:
+                lv_image_set_src(uiHandles->m_lunarPhaseImage, &waxing_gibbous);
+                lv_image_set_rotation(uiHandles->m_lunarPhaseImage, 1800);
+                break;
+            case LunarPhase::LastQuarter:
+                lv_image_set_src(uiHandles->m_lunarPhaseImage, &half_moon);
+                break;
+            case LunarPhase::WaningCrescent:
+                lv_image_set_src(uiHandles->m_lunarPhaseImage, &waxing_crescent);
+                lv_image_set_rotation(uiHandles->m_lunarPhaseImage, 1800);
+                break;
+            default:
+                ESP_LOGE(TAG, "Unknown lunar phase");
+                lv_image_set_src(uiHandles->m_lunarPhaseImage, &new_moon);
+                break;
+            }
         }
     }
 

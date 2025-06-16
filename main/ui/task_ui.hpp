@@ -55,6 +55,7 @@ namespace Ui
         lv_chart_series_t *m_temperatureSeries;
         lv_chart_series_t *m_humiditySeries;
         lv_obj_t *m_provisioningQrCode;
+        lv_obj_t *m_lunarPhaseImage;
     };
 
     class Task
