@@ -19,7 +19,9 @@
 #include "wifi/task_sntp.hpp"
 #include "wifi/wifi_task_interface.hpp"
 
+#include "driver/gpio.h"
 #include "iot_button.h"
+#include "button_gpio.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -67,22 +69,30 @@ static void IRAM_ATTR singleClickCallback(void *button_handle, void *args)
 
 static void initButton(Ui::UiTaskInterface &uiTaskInterface)
 {
-    button_config_t gpio_btn_cfg{};
-    gpio_btn_cfg.type = BUTTON_TYPE_GPIO;
-    gpio_btn_cfg.long_press_time = 7000;
-    gpio_btn_cfg.short_press_time = CONFIG_BUTTON_SHORT_PRESS_TIME_MS;
-    gpio_btn_cfg.gpio_button_config.gpio_num = CONFIG_BUTTON_GPIO;
-    gpio_btn_cfg.gpio_button_config.active_level = 0;
-    gpio_btn_cfg.gpio_button_config.enable_power_save = true;
-    button_handle_t gpio_btn = iot_button_create(&gpio_btn_cfg);
+    button_config_t btn_cfg{};
+    btn_cfg.long_press_time = 7000;
+    btn_cfg.short_press_time = CONFIG_BUTTON_SHORT_PRESS_TIME_MS;
+
+    button_gpio_config_t gpio_cfg = {
+        .gpio_num = CONFIG_BUTTON_GPIO,
+        .active_level = 0,
+        .enable_power_save = true,
+    };
+
+    gpio_cfg.gpio_num = CONFIG_BUTTON_GPIO;
+    gpio_cfg.active_level = 0;
+    gpio_cfg.enable_power_save = true;
+
+    button_handle_t gpio_btn;
+   ESP_ERROR_CHECK(iot_button_new_gpio_device(&btn_cfg, &gpio_cfg, &gpio_btn));
     ESP_ERROR_CHECK(gpio_sleep_sel_dis(static_cast<gpio_num_t>(CONFIG_BUTTON_GPIO)));
     if (nullptr == gpio_btn)
     {
         ESP_LOGE(TAG, "Button create failed");
     }
 
-    ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_SINGLE_CLICK, singleClickCallback, static_cast<void *>(&uiTaskInterface)));
-    ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_LONG_PRESS_HOLD, factoryResetCallback, nullptr));
+    ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_SINGLE_CLICK, nullptr, singleClickCallback, static_cast<void *>(&uiTaskInterface)));
+    ESP_ERROR_CHECK(iot_button_register_cb(gpio_btn, BUTTON_LONG_PRESS_HOLD, nullptr, factoryResetCallback, nullptr));
 }
 
 #if SOC_LP_CORE_SUPPORTED && CONFIG_ULP_COPROC_TYPE_LP_CORE
