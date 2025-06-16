@@ -1,5 +1,7 @@
 # ESP32 Weather Station
 
+[![ESP IDF Build](https://github.com/pat-bert/weather-station/actions/workflows/github-actions.yml/badge.svg)](https://github.com/pat-bert/weather-station/actions/workflows/github-actions.yml)
+
 This project provides the software to run a smart weather station with a small color display based on the popular ESP32 microcontroller.
 
 ## Features

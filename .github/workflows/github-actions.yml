@@ -1,6 +1,8 @@
 name: ESP IDF Build
-run-name: ${{ github.actor }} is testing out GitHub Actions 🚀
+run-name: Build ESP-IDF Project
 on: [push]
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
