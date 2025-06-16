@@ -18,10 +18,11 @@ jobs:
         esp_idf_version: v5.4
         target: esp32c6
         path: '.'
+        command: idf.py -DCMAKE_EXPORT_COMPILE_COMMANDS=1 build
     # Install Cppcheck
     - name: Install Cppcheck
       run: sudo apt-get install -y cppcheck
 
     # Run Cppcheck
     - name: Run Cppcheck
-      run: cppcheck --enable=all --inconclusive --std=c++23 --quiet --project=/app/pat-bert/weather-station/build/compile_commands.json .
+      run: cppcheck --enable=all --inconclusive --std=c++23 --quiet --project=build/compile_commands.json .
