@@ -18,18 +18,10 @@ jobs:
         esp_idf_version: v5.4
         target: esp32c6
         path: '.'
-  cppcheck:
-    runs-on: ubuntu-latest
+    # Install Cppcheck
+    - name: Install Cppcheck
+      run: sudo apt-get install -y cppcheck
 
-    steps:
-      # Checkout the code
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      # Install Cppcheck
-      - name: Install Cppcheck
-        run: sudo apt-get install -y cppcheck
-
-      # Run Cppcheck
-      - name: Run Cppcheck
-        run: cppcheck --enable=all --inconclusive --std=c++23 --quiet --project=compile_commands.json .
+    # Run Cppcheck
+    - name: Run Cppcheck
+      run: cppcheck --enable=all --inconclusive --std=c++23 --quiet --project=compile_commands.json .
