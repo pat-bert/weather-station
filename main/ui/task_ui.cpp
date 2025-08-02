@@ -603,8 +603,8 @@ namespace Ui
             for (uint32_t i = 0; i <= hoursTracked; ++i)
             {
                 uint32_t index = (startIndex + i) % numberOfSensorReadingsSaved;
-                m_temperatureBuffer[index] = static_cast<int32_t>((&ulp_averageTemperature)[i]) / 100;
-                m_humidityBuffer[index] = static_cast<uint32_t>((&ulp_averageHumidity)[i]);
+                m_temperatureBuffer[index] = static_cast<int32_t>(ulp_averageTemperature[i]) / 100;
+                m_humidityBuffer[index] = static_cast<uint32_t>(ulp_averageHumidity[i]);
             }
 
             lv_chart_set_x_start_point(uiHandles->m_temperatureAndHumidityChart, uiHandles->m_temperatureSeries, hoursTracked);

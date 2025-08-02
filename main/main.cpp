@@ -73,18 +73,13 @@ static void initButton(Ui::UiTaskInterface &uiTaskInterface)
     btn_cfg.long_press_time = 7000;
     btn_cfg.short_press_time = CONFIG_BUTTON_SHORT_PRESS_TIME_MS;
 
-    button_gpio_config_t gpio_cfg = {
-        .gpio_num = CONFIG_BUTTON_GPIO,
-        .active_level = 0,
-        .enable_power_save = true,
-    };
-
+    button_gpio_config_t gpio_cfg{};
     gpio_cfg.gpio_num = CONFIG_BUTTON_GPIO;
     gpio_cfg.active_level = 0;
     gpio_cfg.enable_power_save = true;
 
     button_handle_t gpio_btn;
-   ESP_ERROR_CHECK(iot_button_new_gpio_device(&btn_cfg, &gpio_cfg, &gpio_btn));
+    ESP_ERROR_CHECK(iot_button_new_gpio_device(&btn_cfg, &gpio_cfg, &gpio_btn));
     ESP_ERROR_CHECK(gpio_sleep_sel_dis(static_cast<gpio_num_t>(CONFIG_BUTTON_GPIO)));
     if (nullptr == gpio_btn)
     {
