@@ -1,4 +1,5 @@
 #include "esp_log.h"
+#include "esp_matter.h"
 #include "esp_pm.h"
 #include "esp_sleep.h"
 #include "nvs_flash.h"
@@ -159,6 +160,10 @@ extern "C" void app_main(void)
     // Set timezone
     setenv("TZ", CONFIG_TIMEZONE, 1);
     tzset();
+
+    esp_matter::node::config_t nodeConfig{};
+    esp_matter::node_t *node = esp_matter::node::create(&nodeConfig, nullptr, nullptr);
+
 
     QueueHandle_t uiInputQueue{xQueueCreate(8, sizeof(QueueValueType))};
     configASSERT(uiInputQueue);

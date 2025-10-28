@@ -1,6 +1,7 @@
 # This file was generated using idf.py save-defconfig. It can be edited manually.
 # Espressif IoT Development Framework (ESP-IDF) 5.3.2 Project Minimal Configuration
 #
+CONFIG_IDF_TARGET="esp32c6"
 CONFIG_BUTTON_GPIO=2
 CONFIG_LCD_CLOCK_MHZ=30
 CONFIG_LCD_SCLK_GPIO=23
@@ -14,3 +15,4 @@ CONFIG_SCL_GPIO=20
 CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
 CONFIG_ULP_COPROC_ENABLED=y
 CONFIG_ULP_COPROC_RESERVE_MEM=14000
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
