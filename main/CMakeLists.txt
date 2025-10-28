@@ -48,10 +48,13 @@ idf_component_register(
         "st7735"
         "ui"
         "wifi"
+    PRIV_INCLUDE_DIRS
+        "${ESP_MATTER_PATH}/examples/common/utils"
     REQUIRES 
         "driver"
         "esp_event"
         "esp_lcd"
+        "esp_matter"
         "esp_netif"
         "esp_wifi"
         "nvs_flash"
@@ -61,6 +64,8 @@ idf_component_register(
 )
 
 add_compile_definitions(BME280_64BIT_ENABLE)
+
+target_compile_options(${COMPONENT_LIB} PRIVATE "-DCHIP_HAVE_CONFIG_H")
 
 if(CONFIG_ULP_COPROC_TYPE_LP_CORE)
 ulp_add_project("ulp_lp_sensor" "${CMAKE_SOURCE_DIR}/main/ulp/")
